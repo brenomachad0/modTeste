@@ -6,9 +6,10 @@ import { mockProjetos, calcularEstatisticas, type Projeto } from '../../data/moc
 import { 
   RefreshCw, Clock, Building, Flag, Calendar, 
   TrendingUp, AlertCircle, CheckCircle, Package, Users,
-  ArrowUpDown, ArrowUp, ArrowDown, CalendarClock, SortAsc
+  ArrowUpDown, ArrowUp, ArrowDown, CalendarClock, SortAsc, Layers
 } from 'lucide-react';
 import ProjectDetail from './ProjectDetail';
+import TaskViewModal from './TaskViewModal';
 
 // Componente de Card de Projeto no estilo da imagem
 const ProjectCard: React.FC<{
@@ -70,40 +71,85 @@ const ProjectCard: React.FC<{
     }
   };
 
+  // Formatar data de entrega
+  const formatDeliveryDate = (dateString?: string) => {
+    if (!dateString) return null;
+    
+    try {
+      const date = new Date(dateString);
+      const day = date.getDate().toString().padStart(2, '0');
+      const month = (date.getMonth() + 1).toString().padStart(2, '0');
+      const year = date.getFullYear().toString().slice(-2); // Últimos 2 dígitos do ano
+      const hours = date.getHours().toString().padStart(2, '0');
+      const minutes = date.getMinutes().toString().padStart(2, '0');
+      const seconds = date.getSeconds().toString().padStart(2, '0');
+      
+      return {
+        date: `${day}/${month}/${year}`,
+        time: `${hours}:${minutes}:${seconds}`
+      };
+    } catch {
+      return null;
+    }
+  };
+
+  const deliveryDate = formatDeliveryDate(project.prazo_data);
+
   return (
     <div 
       className="bg-gray-800/50 backdrop-blur-sm border border-gray-700/50 rounded-lg p-2 hover:border-gray-600/50 hover:bg-gray-800/70 transition-all duration-200 cursor-pointer group"
       onClick={() => onClick(project)}
     >
-      {/* Header simples com apenas código */}
-      <div className="mb-0.5">
-        <div className="text-base font-bold text-white">
-          {project.demanda_codigo}
+      {/* Header com código e data */}
+      <div className="flex items-start justify-between gap-4 mb-0.5">
+        {/* Conteúdo principal (esquerda) */}
+        <div className="flex-1 min-w-0">
+          {/* Header simples com apenas código */}
+          <div className="mb-0.5">
+            <div className="text-base font-bold text-white">
+              {project.demanda_codigo}
+            </div>
+          </div>
+
+          {/* Cliente e campanha com fonte mais cinza e espaçamento mínimo */}
+          <div className="flex items-center gap-0.5 text-gray-500">
+            <div className="flex items-center gap-1">
+              <Building className="w-3 h-3 text-blue-400 flex-shrink-0" />
+              <span className="text-xs truncate">{project.cliente_nome}</span>
+            </div>
+            <span className="text-gray-600">•</span>
+            <div className="flex items-center gap-0.5">
+              <Flag className="w-3 h-3 text-orange-400 flex-shrink-0" />
+              <span className="text-xs truncate">{project.motivo}</span>
+            </div>
+          </div>
         </div>
+
+        {/* Data estimada de entrega (direita) */}
+        {deliveryDate && (
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            <Calendar className="w-4 h-4 text-blue-400 flex-shrink-0" />
+            <div className="flex flex-col items-start text-left">
+              <div className="text-sm font-semibold text-gray-300 leading-tight">
+                {deliveryDate.date}
+              </div>
+              <div className="text-sm text-gray-400 leading-tight font-medium">
+                {deliveryDate.time}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Cliente e campanha com fonte mais cinza e espaçamento mínimo */}
-      <div className="flex items-center gap-0.5 text-gray-500 mb-0.5">
-        <div className="flex items-center gap-1">
-          <Building className="w-3 h-3 text-blue-400 flex-shrink-0" />
-          <span className="text-xs truncate">{project.cliente_nome}</span>
-        </div>
-        <span className="text-gray-600">•</span>
-        <div className="flex items-center gap-0.5">
-          <Flag className="w-3 h-3 text-orange-400 flex-shrink-0" />
-          <span className="text-xs truncate">{project.motivo}</span>
-        </div>
-      </div>
-
-      {/* Barra de progresso sempre com gradiente */}
-      <div className="flex items-center gap-2">
+      {/* Barra de progresso sempre com gradiente - ocupa toda a largura */}
+      <div className="flex items-center gap-2 mt-1.5">
         <div className="flex-1 bg-gray-700/50 rounded-full h-1.5">
           <div
             className={`h-1.5 rounded-full transition-all duration-300 ${getProgressBarColor(project.status)}`}
             style={{ width: `${project.progresso_percentual}%` }}
           />
         </div>
-        <span className="text-xs text-gray-400 font-medium min-w-[35px]">{project.progresso_percentual}%</span>
+        <span className="text-xs text-gray-400 font-medium min-w-[35px] text-right">{project.progresso_percentual}%</span>
       </div>
     </div>
   );
@@ -144,7 +190,9 @@ const TabSelector: React.FC<{
 const TaskCard: React.FC<{
   task: any;
   onClick: (task: any) => void;
-}> = ({ task, onClick }) => {
+  onProjectClick?: (projectId: string) => void;
+  onEntregaClick?: (projectId: string, entregaId: string) => void;
+}> = ({ task, onClick, onProjectClick, onEntregaClick }) => {
   const [currentTime, setCurrentTime] = useState(new Date());
 
   // Atualizar tempo a cada segundo para o countdown
@@ -157,7 +205,10 @@ const TaskCard: React.FC<{
   }, []);
 
   const formatCountdown = () => {
-    const duracaoPlanejada = task.prazo_horas;
+    // Usar nova estrutura quando disponível, senão fallback para antiga
+    const startAt = task.start_at || task.data_inicio;
+    const endAt = task.end_at || task.data_conclusao;
+    const duration = task.duration || task.prazo_horas; // em minutos
 
     // Função auxiliar para formatar tempo com dias
     const formatTime = (totalMinutes: number, prefix = '') => {
@@ -175,10 +226,10 @@ const TaskCard: React.FC<{
 
     if (task.status === 'concluida') {
       // Para tarefas concluídas, mostrar tempo total gasto
-      let tempoReal = duracaoPlanejada;
-      if (task.data_inicio && task.data_conclusao) {
-        const inicio = new Date(task.data_inicio);
-        const conclusao = new Date(task.data_conclusao);
+      let tempoReal = duration;
+      if (startAt && endAt) {
+        const inicio = new Date(startAt);
+        const conclusao = new Date(endAt);
         const tempoRealMs = conclusao.getTime() - inicio.getTime();
         tempoReal = tempoRealMs / (1000 * 60);
       } else if (task.tempo_execucao) {
@@ -192,12 +243,12 @@ const TaskCard: React.FC<{
       };
     }
 
-    if (task.status === 'executando' && task.data_inicio) {
+    if ((task.status === 'executando' || task.status === 'atrasada') && startAt) {
       // Para tarefas em execução, mostrar countdown
-      const inicio = new Date(task.data_inicio);
+      const inicio = new Date(startAt);
       const tempoDecorridoMs = currentTime.getTime() - inicio.getTime();
       const tempoDecorridoMinutos = tempoDecorridoMs / (1000 * 60);
-      const tempoRestante = duracaoPlanejada - tempoDecorridoMinutos;
+      const tempoRestante = duration - tempoDecorridoMinutos;
       
       if (tempoRestante <= 0) {
         // Tarefa atrasada - mostrar tempo em excesso
@@ -220,7 +271,7 @@ const TaskCard: React.FC<{
 
     // Para outros status, mostrar duração planejada
     return {
-      display: formatTime(duracaoPlanejada),
+      display: formatTime(duration),
       color: 'text-gray-400',
       label: task.status === 'preparacao' ? 'Próxima' : 'Aguardando'
     };
@@ -250,11 +301,13 @@ const TaskCard: React.FC<{
 
   return (
     <div 
-      className="bg-gray-800/50 backdrop-blur-sm border border-gray-700/50 rounded-lg p-2 hover:border-gray-600/50 hover:bg-gray-800/70 transition-all duration-200 cursor-pointer group"
-      onClick={() => onClick(task)}
+      className="bg-gray-800/50 backdrop-blur-sm border border-gray-700/50 rounded-lg p-2 hover:border-gray-600/50 hover:bg-gray-800/70 transition-all duration-200 group"
     >
-      {/* Layout responsivo em uma linha */}
-      <div className="flex items-center justify-between">
+      {/* Primeira linha: Nome + Responsável + Setor + Cronômetro */}
+      <div 
+        className="flex items-center justify-between cursor-pointer"
+        onClick={() => onClick(task)}
+      >
         {/* Lado esquerdo: Nome + Responsável + Setor (responsivo) */}
         <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
           {/* Nome da tarefa */}
@@ -280,6 +333,56 @@ const TaskCard: React.FC<{
           {countdown.display}
         </div>
       </div>
+
+      {/* Segunda linha: Demanda > Entrega > Serviço */}
+      {(task.projeto_codigo || task.entrega_nome || task.servico_nome) && (
+        <div className="flex items-center gap-2 mt-1.5 text-xs text-gray-500">
+          {/* Demanda (sem ícone) */}
+          {task.projeto_codigo && (
+            <>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onProjectClick?.(task.projeto_id);
+                }}
+                className="hover:text-blue-400 transition-colors"
+                title={`Ver projeto: ${task.projeto_codigo}`}
+              >
+                <span className="truncate max-w-[100px]">{task.projeto_codigo}</span>
+              </button>
+              
+              {(task.entrega_nome || task.servico_nome) && <span className="text-gray-600">→</span>}
+            </>
+          )}
+          
+          {/* Entrega (com ícone de cubo) */}
+          {task.entrega_nome && (
+            <>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEntregaClick?.(task.projeto_id, task.entrega_id);
+                }}
+                className="flex items-center gap-1 hover:text-purple-400 transition-colors"
+                title={`Ver entrega: ${task.entrega_nome}`}
+              >
+                <Package className="w-3 h-3" />
+                <span className="truncate max-w-[120px]">{task.entrega_nome}</span>
+              </button>
+              
+              {task.servico_nome && <span className="text-gray-600">→</span>}
+            </>
+          )}
+          
+          {/* Serviço (com ícone de layers) */}
+          {task.servico_nome && (
+            <div className="flex items-center gap-1" title={`Serviço: ${task.servico_nome}`}>
+              <Layers className="w-3 h-3 text-blue-400" />
+              <span className="truncate max-w-[120px]">{task.servico_nome}</span>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };
@@ -313,7 +416,10 @@ const SortControls: React.FC<{
             ? 'text-blue-400 bg-blue-500/20'
             : 'text-gray-400 hover:text-gray-300 hover:bg-gray-700/50'
         }`}
-        title={`Ordenar por prazo ${sortBy === 'prazo' ? (sortOrder === 'asc' ? '(crescente)' : '(decrescente)') : ''}`}
+        title={sortBy === 'prazo' 
+          ? (sortOrder === 'asc' ? 'Prazos mais apertados primeiro' : 'Prazos mais folgados primeiro')
+          : 'Ordenar por prazo mais apertado'
+        }
       >
         <CalendarClock className="w-4 h-4" />
         {sortBy === 'prazo' && (
@@ -335,10 +441,87 @@ const SortControls: React.FC<{
             ? 'text-blue-400 bg-blue-500/20'
             : 'text-gray-400 hover:text-gray-300 hover:bg-gray-700/50'
         }`}
-        title={`Ordenar por nome ${sortBy === 'alfabeto' ? (sortOrder === 'asc' ? '(crescente)' : '(decrescente)') : ''}`}
+        title={sortBy === 'alfabeto'
+          ? (sortOrder === 'asc' ? 'Alfabética A → Z' : 'Alfabética Z → A')
+          : 'Ordenar alfabeticamente'
+        }
       >
         <SortAsc className="w-4 h-4" />
         {sortBy === 'alfabeto' && (
+          <div className="absolute -top-1 -right-1">
+            {sortOrder === 'asc' ? (
+              <ArrowUp className="w-2 h-2 text-blue-400" />
+            ) : (
+              <ArrowDown className="w-2 h-2 text-blue-400" />
+            )}
+          </div>
+        )}
+      </button>
+    </div>
+  );
+};
+
+// Componente de controles de ordenação para projetos
+const ProjectSortControls: React.FC<{
+  sortBy: 'prazo_entrega' | 'codigo';
+  sortOrder: 'asc' | 'desc';
+  onSortByChange: (sortBy: 'prazo_entrega' | 'codigo') => void;
+  onSortOrderChange: (order: 'asc' | 'desc') => void;
+}> = ({ sortBy, sortOrder, onSortByChange, onSortOrderChange }) => {
+  
+  const handleSortToggle = (newSortBy: 'prazo_entrega' | 'codigo') => {
+    if (sortBy === newSortBy) {
+      // Se é o mesmo critério, alterna a direção
+      onSortOrderChange(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      // Se é critério diferente, muda o critério e começa com ascendente
+      onSortByChange(newSortBy);
+      onSortOrderChange('asc');
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-1">
+      {/* Botão de ordenação por prazo de entrega */}
+      <button
+        onClick={() => handleSortToggle('prazo_entrega')}
+        className={`p-2 rounded-lg transition-all relative ${
+          sortBy === 'prazo_entrega'
+            ? 'text-blue-400 bg-blue-500/20'
+            : 'text-gray-400 hover:text-gray-300 hover:bg-gray-700/50'
+        }`}
+        title={sortBy === 'prazo_entrega' 
+          ? (sortOrder === 'asc' ? 'Prazos mais próximos primeiro' : 'Prazos mais distantes primeiro')
+          : 'Ordenar por prazo de entrega'
+        }
+      >
+        <Calendar className="w-4 h-4" />
+        {sortBy === 'prazo_entrega' && (
+          <div className="absolute -top-1 -right-1">
+            {sortOrder === 'asc' ? (
+              <ArrowUp className="w-2 h-2 text-blue-400" />
+            ) : (
+              <ArrowDown className="w-2 h-2 text-blue-400" />
+            )}
+          </div>
+        )}
+      </button>
+
+      {/* Botão de ordenação por código */}
+      <button
+        onClick={() => handleSortToggle('codigo')}
+        className={`p-2 rounded-lg transition-all relative ${
+          sortBy === 'codigo'
+            ? 'text-blue-400 bg-blue-500/20'
+            : 'text-gray-400 hover:text-gray-300 hover:bg-gray-700/50'
+        }`}
+        title={sortBy === 'codigo'
+          ? (sortOrder === 'asc' ? 'Ordem numérica crescente' : 'Ordem numérica decrescente')
+          : 'Ordenar por código numérico'
+        }
+      >
+        <SortAsc className="w-4 h-4" />
+        {sortBy === 'codigo' && (
           <div className="absolute -top-1 -right-1">
             {sortOrder === 'asc' ? (
               <ArrowUp className="w-2 h-2 text-blue-400" />
@@ -362,14 +545,28 @@ const ProjectListView: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'projetos' | 'tarefas'>('projetos');
   const [sortBy, setSortBy] = useState<'prazo' | 'alfabeto'>('prazo');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  const [projectSortBy, setProjectSortBy] = useState<'prazo_entrega' | 'codigo'>('codigo');
+  const [projectSortOrder, setProjectSortOrder] = useState<'asc' | 'desc'>('asc');
   const [showProjectDetail, setShowProjectDetail] = useState(false);
   const [editingServiceId, setEditingServiceId] = useState<string | null>(null);
+  const [selectedTask, setSelectedTask] = useState<any | null>(null);
+  const [showTaskViewModal, setShowTaskViewModal] = useState(false);
 
-  // Extrair todas as tarefas de todos os projetos
+  // Extrair todas as tarefas de todos os projetos, enriquecendo com info de projeto e entrega
   const allTasks = projetos.flatMap(projeto => 
     projeto.entregas?.flatMap(entrega => 
       entrega.servicos?.flatMap(servico => 
-        servico.tarefas || []
+        (servico.tarefas || []).map(tarefa => ({
+          ...tarefa,
+          // Enriquecer com informações de contexto
+          projeto_id: projeto.id,
+          projeto_codigo: projeto.demanda_codigo,
+          projeto_cliente: projeto.cliente_nome,
+          entrega_id: entrega.id,
+          entrega_nome: entrega.nome,
+          servico_id: servico.id,
+          servico_nome: servico.nome
+        }))
       ) || []
     ) || []
   );
@@ -377,42 +574,98 @@ const ProjectListView: React.FC = () => {
   // Função para ordenar tarefas
   const sortTasks = (tasks: any[]) => {
     const sorted = [...tasks].sort((a, b) => {
-      // Primeira prioridade: tarefas atrasadas sempre primeiro
-      const currentTime = new Date();
+      const currentTime = Date.now();
       
-      const aIsLate = a.status === 'executando' && a.data_inicio && 
-        (currentTime.getTime() - new Date(a.data_inicio).getTime()) / (1000 * 60) > a.prazo_horas;
-      const bIsLate = b.status === 'executando' && b.data_inicio && 
-        (currentTime.getTime() - new Date(b.data_inicio).getTime()) / (1000 * 60) > b.prazo_horas;
+      // Calcular prazo remanescente para cada tarefa (em milissegundos)
+      const calcularPrazoRemanescente = (tarefa: any) => {
+        // Estrutura de dados:
+        // start_at: data que começou (ISO string ou timestamp)
+        // duration: prazo inicial da tarefa (em minutos)
+        // end_at: data que encerrou (ISO string ou timestamp)
+        
+        const startAt = tarefa.start_at || tarefa.data_inicio;
+        const endAt = tarefa.end_at || tarefa.data_conclusao;
+        const duration = tarefa.duration || tarefa.prazo_horas; // em minutos
+        
+        // Se tem start && end = tarefa concluída (não entra na lista ou vai pro final)
+        if (startAt && endAt) {
+          return Infinity; // Concluídas vão sempre pro final
+        }
+        
+        // Se tem start = duration - (agora - start)
+        if (startAt) {
+          const start = new Date(startAt).getTime();
+          const durationMs = duration * 60 * 1000; // converter minutos para ms
+          const elapsed = currentTime - start;
+          const remaining = durationMs - elapsed;
+          
+          // Retorna o remanescente (pode ser negativo se atrasado)
+          // NEGATIVO = atrasado (mais negativo = mais atrasado = mais apertado)
+          // POSITIVO = no prazo (menor valor = mais apertado)
+          return remaining;
+        }
+        
+        // Não tem start = duration (prazo total em ms)
+        // Tarefas não iniciadas sempre vão pro final
+        return Infinity;
+      };
       
-      if (aIsLate && !bIsLate) return -1;
-      if (!aIsLate && bIsLate) return 1;
-      
-      // Se ambas atrasadas ou nenhuma atrasada, usar critério secundário
       if (sortBy === 'prazo') {
-        const aDate = new Date(a.data_inicio || a.data_prevista || '2099-12-31');
-        const bDate = new Date(b.data_inicio || b.data_prevista || '2099-12-31');
-        const comparison = aDate.getTime() - bDate.getTime();
+        const aPrazo = calcularPrazoRemanescente(a);
+        const bPrazo = calcularPrazoRemanescente(b);
+        
+        // ASC = Prazos mais apertados primeiro (menor valor primeiro)
+        //   1. Mais atrasados primeiro (-2D vem antes de -1D)
+        //   2. Menos tempo restante (1:45 vem antes de 7:30)
+        //   3. Tarefas concluídas e não iniciadas por último (Infinity)
+        // DESC = Prazos mais folgados primeiro (maior valor primeiro)
+        const comparison = aPrazo - bPrazo;
         return sortOrder === 'asc' ? comparison : -comparison;
       } else {
-        // Ordenação alfabética simples - título da tarefa
-        const aName = (a.nome || '').toLowerCase();
-        const bName = (b.nome || '').toLowerCase();
+        // Ordenação alfabética por nome da tarefa
+        const aName = (a.nome || '').toLowerCase().trim();
+        const bName = (b.nome || '').toLowerCase().trim();
         
-        // Comparação letra a letra
-        if (aName < bName) {
-          return sortOrder === 'asc' ? -1 : 1;
-        }
-        if (aName > bName) {
-          return sortOrder === 'asc' ? 1 : -1;
-        }
-        return 0;
+        const comparison = aName.localeCompare(bName);
+        return sortOrder === 'asc' ? comparison : -comparison;
       }
     });
     return sorted;
   };
 
   const sortedTasks = sortTasks(allTasks);
+
+  // Função de ordenação de projetos
+  const sortProjects = (projects: Projeto[]) => {
+    const filtered = projects.filter(p => p.status !== 'concluida');
+    
+    return [...filtered].sort((a, b) => {
+      if (projectSortBy === 'prazo_entrega') {
+        // Ordenação por prazo de entrega
+        const dateA = a.prazo_data ? new Date(a.prazo_data).getTime() : Infinity;
+        const dateB = b.prazo_data ? new Date(b.prazo_data).getTime() : Infinity;
+        return projectSortOrder === 'asc' ? dateA - dateB : dateB - dateA;
+      } else {
+        // Ordenação por código numérico (extrai o ano e número do código)
+        const extractNumber = (codigo: string) => {
+          // Exemplo: "2024-0045" ou "2025-0001"
+          const match = codigo.match(/(\d{4})-(\d+)/);
+          if (match) {
+            const year = parseInt(match[1]);
+            const num = parseInt(match[2]);
+            return year * 100000 + num; // Combina ano e número para ordenação correta
+          }
+          return 0;
+        };
+        
+        const numA = extractNumber(a.demanda_codigo);
+        const numB = extractNumber(b.demanda_codigo);
+        return projectSortOrder === 'asc' ? numA - numB : numB - numA;
+      }
+    });
+  };
+
+  const sortedProjects = sortProjects(projetos);
 
   // Simular carregamento inicial
   useEffect(() => {
@@ -434,8 +687,21 @@ const ProjectListView: React.FC = () => {
   };
 
   const handleTaskClick = (task: any) => {
-    console.log('Tarefa selecionada:', task);
-    // Aqui você pode abrir modal ou navegar para detalhes da tarefa
+    setSelectedTask(task);
+    setShowTaskViewModal(true);
+  };
+
+  const handleProjectClickFromTask = (projectId: string) => {
+    const project = projetos.find(p => p.id === projectId);
+    if (project) {
+      setSelectedProject(project);
+      setShowProjectDetail(true);
+    }
+  };
+
+  const handleEntregaClickFromTask = (projectId: string, entregaId: string) => {
+    console.log('Navegando para entrega:', { projectId, entregaId });
+    router.push(`/projetos/${projectId}/entregas/${entregaId}`);
   };
 
   const handleTabChange = (tab: 'projetos' | 'tarefas') => {
@@ -561,16 +827,26 @@ const ProjectListView: React.FC = () => {
 
         {/* Lista condicional baseada na aba ativa */}
         {activeTab === 'projetos' ? (
-          <div className="space-y-1">
-            {projetos
-              .filter(project => project.status !== 'concluida')
-              .map(project => (
+          <div>
+            {/* Controles de ordenação para projetos - alinhados à direita */}
+            <div className="flex justify-end mb-3">
+              <ProjectSortControls
+                sortBy={projectSortBy}
+                sortOrder={projectSortOrder}
+                onSortByChange={setProjectSortBy}
+                onSortOrderChange={setProjectSortOrder}
+              />
+            </div>
+            
+            <div className="space-y-1">
+              {sortedProjects.map(project => (
                 <ProjectCard
                   key={project.id}
                   project={project}
                   onClick={handleProjectClick}
                 />
               ))}
+            </div>
           </div>
         ) : (
           <div>
@@ -590,6 +866,8 @@ const ProjectListView: React.FC = () => {
                   key={task.id}
                   task={task}
                   onClick={handleTaskClick}
+                  onProjectClick={handleProjectClickFromTask}
+                  onEntregaClick={handleEntregaClickFromTask}
                 />
               ))}
             </div>
@@ -605,6 +883,13 @@ const ProjectListView: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Modal de detalhes da tarefa */}
+      <TaskViewModal
+        isOpen={showTaskViewModal}
+        onClose={() => setShowTaskViewModal(false)}
+        task={selectedTask}
+      />
     </div>
   );
 };
