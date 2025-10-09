@@ -17,13 +17,21 @@ export interface Tarefa {
   responsavel_usuario?: string | null;
   responsavel_nome?: string | null;
   responsavel_tipo?: string;
-  prazo_horas: number;
-  mandrill_coins: number;
-  instrucao?: string;
-  templates?: Template[];
+  
+  // ✅ Nova estrutura de prazo
+  start_at?: string | null;        // Data/hora que começou (ISO 8601)
+  duration?: number;                // Prazo inicial em minutos
+  end_at?: string | null;           // Data/hora que encerrou (ISO 8601)
+  
+  // ⚠️ Campos antigos (manter para compatibilidade)
+  prazo_horas: number;              // Na verdade são minutos
   data_inicio?: string;
   data_conclusao?: string;
   tempo_execucao?: number;
+  
+  mandrill_coins: number;
+  instrucao?: string;
+  templates?: Template[];
   resultado?: {
     descricao: string;
     paragrafo?: string;
@@ -451,6 +459,123 @@ export const mockProjetos: Projeto[] = [
                 prazo_horas: 360, // 6 horas
                 mandrill_coins: 150,
                 instrucao: 'Mapear funcionalidades e requisitos técnicos do website.'
+              },
+              // ========== TAREFAS DE TESTE PARA ORDENAÇÃO ==========
+              {
+                id: 'tar_test_1',
+                nome: 'TESTE: Muito atrasada (2 dias)',
+                status: 'atrasada',
+                ordem: 2,
+                setor: 'Criação',
+                responsavel_nome: 'João Silva',
+                responsavel_tipo: 'Criação',
+                start_at: '2025-10-05T10:00:00Z', // Iniciou há 4 dias
+                duration: 480, // 8 horas de prazo
+                end_at: null,
+                prazo_horas: 480, // Compatibilidade
+                data_inicio: '2025-10-05T10:00:00Z',
+                mandrill_coins: 100,
+                instrucao: 'Tarefa muito atrasada para teste de ordenação.'
+              },
+              {
+                id: 'tar_test_2',
+                nome: 'TESTE: Atrasada (1 dia)',
+                status: 'atrasada',
+                ordem: 3,
+                setor: 'Produção',
+                responsavel_nome: 'Maria Santos',
+                responsavel_tipo: 'Produção',
+                start_at: '2025-10-07T08:00:00Z', // Iniciou há 2 dias
+                duration: 360, // 6 horas de prazo
+                end_at: null,
+                prazo_horas: 360,
+                data_inicio: '2025-10-07T08:00:00Z',
+                mandrill_coins: 80,
+                instrucao: 'Tarefa atrasada 1 dia para teste.'
+              },
+              {
+                id: 'tar_test_3',
+                nome: 'TESTE: Prazo apertado (1h45)',
+                status: 'executando',
+                ordem: 4,
+                setor: 'Marketing',
+                responsavel_nome: 'Pedro Costa',
+                responsavel_tipo: 'Marketing',
+                start_at: '2025-10-09T12:00:00Z', // Iniciou há ~3 horas
+                duration: 285, // 4h45min de prazo
+                end_at: null,
+                prazo_horas: 285,
+                data_inicio: '2025-10-09T12:00:00Z',
+                mandrill_coins: 60,
+                instrucao: 'Tarefa com prazo apertado (1h45 restante).'
+              },
+              {
+                id: 'tar_test_4',
+                nome: 'TESTE: Prazo médio (7h30)',
+                status: 'executando',
+                ordem: 5,
+                setor: 'Design',
+                responsavel_nome: 'Ana Lima',
+                responsavel_tipo: 'Design',
+                start_at: '2025-10-09T10:00:00Z', // Iniciou há ~5 horas
+                duration: 750, // 12h30min de prazo
+                end_at: null,
+                prazo_horas: 750,
+                data_inicio: '2025-10-09T10:00:00Z',
+                mandrill_coins: 120,
+                instrucao: 'Tarefa com prazo médio (7h30 restante).'
+              },
+              {
+                id: 'tar_test_5',
+                nome: 'TESTE: Não iniciada (8h total)',
+                status: 'aguardando',
+                ordem: 6,
+                setor: 'Tecnologia',
+                responsavel_nome: null,
+                responsavel_tipo: 'Tecnologia',
+                start_at: null,
+                duration: 480, // 8 horas
+                end_at: null,
+                prazo_horas: 480,
+                mandrill_coins: 90,
+                instrucao: 'Tarefa não iniciada com 8h de prazo total.'
+              },
+              {
+                id: 'tar_test_6',
+                nome: 'TESTE: Não iniciada (6h total)',
+                status: 'aguardando',
+                ordem: 7,
+                setor: 'Atendimento',
+                responsavel_nome: null,
+                responsavel_tipo: 'Atendimento',
+                start_at: null,
+                duration: 360, // 6 horas
+                end_at: null,
+                prazo_horas: 360,
+                mandrill_coins: 70,
+                instrucao: 'Tarefa não iniciada com 6h de prazo total.'
+              },
+              {
+                id: 'tar_test_7',
+                nome: 'TESTE: Concluída',
+                status: 'concluida',
+                ordem: 8,
+                setor: 'Criação',
+                responsavel_nome: 'Carlos Souza',
+                responsavel_tipo: 'Criação',
+                start_at: '2025-10-08T09:00:00Z',
+                duration: 240,
+                end_at: '2025-10-08T12:30:00Z',
+                prazo_horas: 240,
+                data_inicio: '2025-10-08T09:00:00Z',
+                data_conclusao: '2025-10-08T12:30:00Z',
+                tempo_execucao: 210,
+                mandrill_coins: 100,
+                instrucao: 'Tarefa concluída para teste.',
+                resultado: {
+                  descricao: 'Tarefa teste concluída com sucesso',
+                  paragrafo: 'Executada conforme planejado.'
+                }
               }
             ]
           }

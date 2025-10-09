@@ -212,14 +212,14 @@ export default function ServiceFlowCanvas({
     sourcePosition: Position.Right,
   };
 
-  // Adicionar nó Job Aprovado (fim)
+  // Adicionar nó Entrega Aprovada (fim)
   const endNode: Node = {
     id: 'end-node',
     type: 'serviceNode',
     position: { x: 250 + servicos.length * 350, y: 150 },
     data: {
       id: 'end-node',
-      nome: 'Job Aprovado',
+      nome: 'Entrega Aprovada',
       status: 'planejada',
       progresso_percentual: 0,
       tarefas: [],
@@ -274,7 +274,7 @@ export default function ServiceFlowCanvas({
       position: { x: 250 + servicos.length * 350, y: 150 },
       data: {
         id: 'end-node',
-        nome: 'Job Aprovado',
+        nome: 'Entrega Aprovada',
         status: 'planejada',
         progresso_percentual: 0,
         tarefas: [],
