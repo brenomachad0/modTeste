@@ -7,8 +7,22 @@ import { useSocketContext } from '../../lib/websocket/SocketContext';
  * Hook para trabalhar com WebSocket de forma simplificada
  */
 export const useSocket = () => {
-  const { socketManager, isConnected, socketId } = useSocketContext();
+  const context = useSocketContext();
   const unsubscribeCallbacks = useRef<(() => void)[]>([]);
+
+  // Se não houver contexto (ex: modo demo sem backend), retorna funções vazias
+  if (!context) {
+    return {
+      on: () => () => {},
+      emit: () => {},
+      joinRoom: () => {},
+      leaveRoom: () => {},
+      isConnected: false,
+      socketId: undefined,
+    };
+  }
+
+  const { socketManager, isConnected, socketId } = context;
 
   /**
    * Inscreve-se em um evento do WebSocket

@@ -50,10 +50,7 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   );
 };
 
-export const useSocketContext = (): SocketContextValue => {
+export const useSocketContext = (): SocketContextValue | null => {
   const context = useContext(SocketContext);
-  if (!context) {
-    throw new Error('useSocketContext deve ser usado dentro de um SocketProvider');
-  }
   return context;
 };

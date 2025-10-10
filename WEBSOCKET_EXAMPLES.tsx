@@ -265,7 +265,70 @@ export function RoomComponent({ roomId }: { roomId: string }) {
 }
 
 // ============================================
-// EXEMPLO 7: React Flow - Manipulação de Serviços
+// EXEMPLO 7: Sistema de Presença - Cursores Colaborativos
+// ============================================
+
+'use client';
+
+import { usePresence } from '@/app/hooks/usePresence';
+import { CollaborativeCursors } from '@/app/components/CollaborativeCursors';
+import { ActiveUsersPanel, ActiveUsersAvatars } from '@/app/components/ActiveUsersPanel';
+
+export function ProjetoPageWithPresence({ projetoId }: { projetoId: string }) {
+  // Inicializa presença (automático - rastreia cursor, entra/sai da página)
+  const { startEditing, stopEditing, isConnected } = usePresence({
+    user_id: 'user_123',
+    user_name: 'João Silva',
+    user_avatar: 'https://example.com/avatar.jpg',
+    page: 'projeto',
+    page_id: projetoId,
+    enabled: true,
+  });
+
+  const handleEditTask = (taskId: string) => {
+    // Marca que está editando (trava para outros usuários)
+    startEditing(taskId);
+    
+    // ... abrir modal de edição
+  };
+
+  const handleCloseModal = () => {
+    // Para de editar
+    stopEditing();
+  };
+
+  return (
+    <div className="flex h-screen">
+      {/* Cursores de outros usuários (overlay global) */}
+      <CollaborativeCursors />
+
+      {/* Conteúdo principal */}
+      <main className="flex-1 p-6">
+        <div className="flex items-center justify-between mb-6">
+          <h1>Projeto #{projetoId.slice(-6)}</h1>
+          
+          {/* Avatares compactos no header */}
+          <ActiveUsersAvatars maxVisible={5} />
+        </div>
+
+        {/* Seu conteúdo aqui */}
+        <div>...</div>
+      </main>
+
+      {/* Painel lateral com usuários ativos */}
+      <aside className="w-80 border-l p-4">
+        <ActiveUsersPanel
+          title="👥 Quem está aqui"
+          showCurrentUser={true}
+          maxVisible={10}
+        />
+      </aside>
+    </div>
+  );
+}
+
+// ============================================
+// EXEMPLO 8: React Flow - Manipulação de Serviços
 // ============================================
 
 'use client';

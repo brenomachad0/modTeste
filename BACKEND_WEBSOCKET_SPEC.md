@@ -1089,6 +1089,567 @@ artillery run artillery.yml
 - [ ] Implementar lógica de emissão de eventos quando dados mudam
 - [ ] (Opcional) Configurar Redis para escalabilidade
 
+---
+
+## 👁️ Sistema de Presença (Collaborative Cursors)
+
+O frontend MOD possui um **sistema de presença colaborativa** inspirado no **Figma/Google Docs** que mostra cursores de outros usuários em tempo real.
+
+### Funcionalidades
+
+- ✅ **Cursores em tempo real** - Ver onde outros usuários estão
+- ✅ **Cores únicas** - Cada usuário tem uma cor gerada automaticamente
+- ✅ **Status de edição** - Ver quem está editando o quê
+- ✅ **Indicador de inatividade** - Usuários inativos por 30s ficam "ausentes"
+- ✅ **Painel de usuários ativos** - Sidebar com lista de quem está online
+- ✅ **Funciona em todas as páginas** - Dashboard, Projetos, Entregas, DnD Canvas
+
+### Estrutura de Dados
+
+```typescript
+interface UserPresence {
+  user_id: string;
+  user_name: string;
+  user_avatar?: string;
+  color: string;           // Cor gerada automaticamente (ex: "#3B82F6")
+  
+  // Localização
+  page: 'dashboard' | 'projeto' | 'entrega' | 'servico';
+  page_id?: string;        // ID do projeto/entrega/serviço
+  
+  // Posição do cursor (coordenadas relativas à viewport)
+  cursor: {
+    x: number;
+    y: number;
+    viewport_width: number;
+    viewport_height: number;
+  };
+  
+  // Estado
+  is_editing?: string;     // ID do item sendo editado (tarefa, serviço, etc)
+  is_idle: boolean;        // Se está inativo (30s sem movimento)
+  last_seen: string;       // ISO timestamp da última atividade
+}
+```
+
+### Eventos WebSocket - Presença
+
+#### 📤 Client → Server
+
+##### 1. Entrar na Página
+**Evento:** `presence:join`
+
+```typescript
+{
+  user_id: string;
+  user_name: string;
+  user_avatar?: string;
+  page: 'dashboard' | 'projeto' | 'entrega' | 'servico';
+  page_id?: string;
+  cursor: {
+    x: number;
+    y: number;
+    viewport_width: number;
+    viewport_height: number;
+  };
+}
+```
+
+**Quando usar:** Quando o usuário entra em uma página.
+
+**Backend deve:**
+- Salvar presença em memória (Map ou Redis)
+- Adicionar usuário à sala da página (ex: `page:dashboard`, `page:projeto:123`)
+- Emitir `presence:user_joined` para todos na sala
+- Enviar `presence:users_list` com lista atual de usuários na sala para o novo usuário
+
+---
+
+##### 2. Sair da Página
+**Evento:** `presence:leave`
+
+```typescript
+{
+  user_id: string;
+  page: string;
+  page_id?: string;
+}
+```
+
+**Quando usar:** Quando o usuário sai da página ou desconecta.
+
+**Backend deve:**
+- Remover presença da memória
+- Remover usuário da sala
+- Emitir `presence:user_left` para todos na sala
+
+---
+
+##### 3. Movimento do Cursor
+**Evento:** `presence:cursor_move`
+
+```typescript
+{
+  user_id: string;
+  page: string;
+  page_id?: string;
+  x: number;
+  y: number;
+  viewport_width: number;
+  viewport_height: number;
+}
+```
+
+**Quando usar:** A cada 50ms quando o usuário move o cursor (throttled).
+
+**Backend deve:**
+- Atualizar posição do cursor na presença
+- Emitir `presence:cursor_moved` para todos na sala (exceto o próprio usuário)
+- Atualizar `last_seen` timestamp
+
+**⚠️ Performance:** Este evento é disparado MUITAS vezes. Use throttle/debounce!
+
+---
+
+##### 4. Começar/Parar de Editar
+**Evento:** `presence:editing`
+
+```typescript
+{
+  user_id: string;
+  page: string;
+  page_id?: string;
+  item_id: string;         // ID da tarefa/serviço sendo editado
+  is_editing: boolean;     // true = começou, false = parou
+}
+```
+
+**Quando usar:** Quando o usuário abre/fecha modal de edição.
+
+**Backend deve:**
+- Atualizar campo `is_editing` na presença
+- Emitir `presence:editing_changed` para todos na sala
+- Pode implementar lock (não deixar 2 pessoas editarem ao mesmo tempo)
+
+---
+
+##### 5. Mudar de Página
+**Evento:** `presence:page_change`
+
+```typescript
+{
+  user_id: string;
+  page: 'dashboard' | 'projeto' | 'entrega' | 'servico';
+  page_id?: string;
+}
+```
+
+**Quando usar:** Quando o usuário navega para outra página.
+
+**Backend deve:**
+- Remover usuário da sala anterior
+- Adicionar à nova sala
+- Emitir `presence:user_left` na sala anterior
+- Emitir `presence:user_joined` na nova sala
+
+---
+
+#### 📥 Server → Client
+
+##### 1. Usuário Entrou
+**Evento:** `presence:user_joined`
+
+```typescript
+{
+  user_id: string;
+  user_name: string;
+  user_avatar?: string;
+  color: string;
+  page: string;
+  page_id?: string;
+  cursor: { x: number; y: number; viewport_width: number; viewport_height: number };
+  is_editing?: string;
+  is_idle: boolean;
+  last_seen: string;
+}
+```
+
+**Quando emitir:** Quando alguém entra na sala (conexão ou mudança de página).
+
+---
+
+##### 2. Usuário Saiu
+**Evento:** `presence:user_left`
+
+```typescript
+{
+  user_id: string;
+}
+```
+
+**Quando emitir:** Quando alguém sai da sala ou desconecta.
+
+---
+
+##### 3. Cursor Moveu
+**Evento:** `presence:cursor_moved`
+
+```typescript
+{
+  user_id: string;
+  cursor: {
+    x: number;
+    y: number;
+    viewport_width: number;
+    viewport_height: number;
+  };
+  last_seen: string;
+}
+```
+
+**Quando emitir:** Quando alguém move o cursor (broadcast para todos exceto o próprio).
+
+---
+
+##### 4. Estado de Edição Mudou
+**Evento:** `presence:editing_changed`
+
+```typescript
+{
+  user_id: string;
+  item_id?: string;
+  is_editing: boolean;
+}
+```
+
+**Quando emitir:** Quando alguém começa/para de editar.
+
+---
+
+##### 5. Lista Inicial de Usuários
+**Evento:** `presence:users_list`
+
+```typescript
+{
+  users: UserPresence[];  // Array com todos os usuários na sala
+}
+```
+
+**Quando emitir:** Quando um novo usuário entra, enviar lista atual de quem já está na sala.
+
+---
+
+### Implementação Backend - Presença
+
+```typescript
+// src/socket/presence.ts
+import { Server, Socket } from 'socket.io';
+
+interface UserPresence {
+  user_id: string;
+  user_name: string;
+  user_avatar?: string;
+  color: string;
+  page: string;
+  page_id?: string;
+  cursor: { x: number; y: number; viewport_width: number; viewport_height: number };
+  is_editing?: string;
+  is_idle: boolean;
+  last_seen: string;
+}
+
+// Store de presença (em produção use Redis)
+const presenceStore = new Map<string, UserPresence>();
+
+export function setupPresenceHandlers(io: Server, socket: Socket) {
+  
+  // Usuário entra na página
+  socket.on('presence:join', async (data: any) => {
+    const { user_id, user_name, user_avatar, page, page_id, cursor } = data;
+    
+    const roomName = page_id ? `page:${page}:${page_id}` : `page:${page}`;
+    
+    // Salva presença
+    const presence: UserPresence = {
+      user_id,
+      user_name,
+      user_avatar,
+      color: generateColor(user_id), // Gera cor única
+      page,
+      page_id,
+      cursor,
+      is_editing: undefined,
+      is_idle: false,
+      last_seen: new Date().toISOString(),
+    };
+    
+    presenceStore.set(user_id, presence);
+    
+    // Entra na sala
+    socket.join(roomName);
+    
+    // Envia lista atual de usuários para o novo usuário
+    const usersInRoom = getUsersInRoom(roomName);
+    socket.emit('presence:users_list', { users: usersInRoom });
+    
+    // Avisa a sala que alguém entrou
+    socket.to(roomName).emit('presence:user_joined', presence);
+  });
+  
+  // Usuário sai da página
+  socket.on('presence:leave', (data: any) => {
+    const { user_id, page, page_id } = data;
+    const roomName = page_id ? `page:${page}:${page_id}` : `page:${page}`;
+    
+    presenceStore.delete(user_id);
+    socket.leave(roomName);
+    socket.to(roomName).emit('presence:user_left', { user_id });
+  });
+  
+  // Cursor moveu (throttled no frontend a cada 50ms)
+  socket.on('presence:cursor_move', (data: any) => {
+    const { user_id, page, page_id, x, y, viewport_width, viewport_height } = data;
+    const roomName = page_id ? `page:${page}:${page_id}` : `page:${page}`;
+    
+    const presence = presenceStore.get(user_id);
+    if (presence) {
+      presence.cursor = { x, y, viewport_width, viewport_height };
+      presence.last_seen = new Date().toISOString();
+      presence.is_idle = false;
+    }
+    
+    // Broadcast para todos na sala (exceto quem enviou)
+    socket.to(roomName).emit('presence:cursor_moved', {
+      user_id,
+      cursor: { x, y, viewport_width, viewport_height },
+      last_seen: new Date().toISOString(),
+    });
+  });
+  
+  // Começou/parou de editar
+  socket.on('presence:editing', (data: any) => {
+    const { user_id, page, page_id, item_id, is_editing } = data;
+    const roomName = page_id ? `page:${page}:${page_id}` : `page:${page}`;
+    
+    const presence = presenceStore.get(user_id);
+    if (presence) {
+      presence.is_editing = is_editing ? item_id : undefined;
+      presence.last_seen = new Date().toISOString();
+    }
+    
+    socket.to(roomName).emit('presence:editing_changed', {
+      user_id,
+      item_id,
+      is_editing,
+    });
+  });
+  
+  // Mudou de página
+  socket.on('presence:page_change', (data: any) => {
+    const { user_id, page, page_id } = data;
+    
+    // Remove da sala anterior
+    const oldPresence = presenceStore.get(user_id);
+    if (oldPresence) {
+      const oldRoom = oldPresence.page_id 
+        ? `page:${oldPresence.page}:${oldPresence.page_id}` 
+        : `page:${oldPresence.page}`;
+      socket.leave(oldRoom);
+      socket.to(oldRoom).emit('presence:user_left', { user_id });
+    }
+    
+    // Entra na nova sala
+    const newRoom = page_id ? `page:${page}:${page_id}` : `page:${page}`;
+    socket.join(newRoom);
+    
+    const presence = presenceStore.get(user_id);
+    if (presence) {
+      presence.page = page;
+      presence.page_id = page_id;
+      socket.to(newRoom).emit('presence:user_joined', presence);
+    }
+  });
+  
+  // Ao desconectar, remove presença
+  socket.on('disconnect', () => {
+    // Acha todas as presenças desse socket e remove
+    for (const [user_id, presence] of presenceStore.entries()) {
+      const roomName = presence.page_id 
+        ? `page:${presence.page}:${presence.page_id}` 
+        : `page:${presence.page}`;
+      socket.to(roomName).emit('presence:user_left', { user_id });
+      presenceStore.delete(user_id);
+    }
+  });
+}
+
+// Helper: gera cor única baseada no user_id
+function generateColor(userId: string): string {
+  const colors = [
+    '#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6',
+    '#EC4899', '#14B8A6', '#F97316', '#06B6D4', '#84CC16',
+  ];
+  let hash = 0;
+  for (let i = 0; i < userId.length; i++) {
+    hash = userId.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return colors[Math.abs(hash) % colors.length];
+}
+
+// Helper: pega usuários em uma sala
+function getUsersInRoom(roomName: string): UserPresence[] {
+  const users: UserPresence[] = [];
+  for (const presence of presenceStore.values()) {
+    const room = presence.page_id 
+      ? `page:${presence.page}:${presence.page_id}` 
+      : `page:${presence.page}`;
+    if (room === roomName) {
+      users.push(presence);
+    }
+  }
+  return users;
+}
+```
+
+---
+
+## 💬 Sistema de Chat Colaborativo (Balões Flutuantes)
+
+O frontend possui um sistema de **chat em tempo real** com mensagens que aparecem como **balões flutuantes** perto do cursor de cada usuário, similar ao Figma.
+
+### Funcionalidades
+
+- ✅ **Pressione "/"** para digitar mensagem
+- ✅ **Balão rosa/colorido** "Say something" aparece perto do cursor
+- ✅ **Mensagens visíveis** para todos na mesma sala
+- ✅ **Auto-desaparecem** após 5 segundos
+- ✅ **Posicionadas** próximas ao cursor do usuário
+
+### Eventos WebSocket - Chat
+
+#### 📤 Client → Server
+
+##### Enviar Mensagem
+**Evento:** `chat:message`
+
+```typescript
+{
+  user_id: string;
+  user_name: string;
+  message: string;        // Texto da mensagem (max 100 chars)
+  color: string;          // Cor do balão (mesma do cursor)
+  position: {
+    x: number;
+    y: number;
+  };
+  timestamp: number;      // Unix timestamp
+}
+```
+
+**Quando usar:** Quando usuário digita "/" e envia mensagem.
+
+**Backend deve:**
+- Validar mensagem (max 100 caracteres, sem HTML, filtro de palavrões)
+- Broadcast para todos na sala (exceto quem enviou)
+- NÃO salvar no banco (mensagens são efêmeras)
+- Rate limit: máximo 5 mensagens por minuto por usuário
+
+---
+
+#### 📥 Server → Client
+
+##### Mensagem Recebida
+**Evento:** `chat:message`
+
+```typescript
+{
+  user_id: string;
+  user_name: string;
+  message: string;
+  color: string;
+  position: { x: number; y: number };
+  timestamp: number;
+}
+```
+
+**Quando emitir:** Quando alguém envia mensagem (broadcast para sala).
+
+**Frontend irá:**
+- Mostrar balão flutuante na posição do cursor do remetente
+- Auto-remover após 5 segundos
+- Não mostrar para o próprio usuário (já apareceu localmente)
+
+---
+
+### Implementação Backend - Chat
+
+```typescript
+// src/socket/chat.ts
+import { Server, Socket } from 'socket.io';
+
+export function setupChatHandlers(io: Server, socket: Socket) {
+  
+  socket.on('chat:message', (data: any) => {
+    const { user_id, user_name, message, color, position, timestamp } = data;
+    
+    // Validações
+    if (!message || message.length > 100) {
+      socket.emit('chat:error', { error: 'Mensagem inválida' });
+      return;
+    }
+    
+    // Sanitiza HTML
+    const sanitizedMessage = message.replace(/<[^>]*>/g, '');
+    
+    // Rate limiting (Redis ou memória)
+    // ... implementar controle de 5 msgs/min
+    
+    // Broadcast para a sala (exceto quem enviou)
+    const roomName = `page:${data.page}:${data.page_id || ''}`;
+    
+    socket.to(roomName).emit('chat:message', {
+      user_id,
+      user_name,
+      message: sanitizedMessage,
+      color,
+      position,
+      timestamp,
+    });
+  });
+}
+```
+
+---
+
+### Performance e Boas Práticas
+
+1. **Throttling de Cursor:**
+   - Frontend já throttla a 50ms
+   - Backend pode adicionar throttle extra se necessário
+   - Não salve no banco de dados (apenas memória/Redis)
+
+2. **Chat:**
+   - **Não salvar mensagens** (efêmeras, 5 segundos)
+   - **Rate limiting:** 5 mensagens/minuto por usuário
+   - **Sanitização:** remover HTML, filtrar palavrões
+   - **Validação:** máximo 100 caracteres
+
+3. **Cleanup:**
+   - Remova presenças ao desconectar
+   - Implemente timeout (remover usuários inativos após 5 minutos)
+   - Limpe salas vazias
+
+4. **Escalabilidade:**
+   - Use **Redis** para armazenar presença (múltiplos servidores)
+   - Use **Redis Pub/Sub** para sincronizar entre instâncias
+
+5. **Privacidade:**
+   - Não exponha dados sensíveis no cursor
+   - Valide permissões (usuário pode ver esta sala?)
+   - Rate limiting para evitar spam
+
+---
+
 ### Lógica de Negócio Crítica
 
 - [ ] **Countdown de Tarefas**: Criar job que atualiza `end_at` das tarefas a cada segundo
