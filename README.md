@@ -2,6 +2,26 @@
 
 Sistema completo de gerenciamento de projetos, entregas, serviços e tarefas com interface moderna e responsiva.
 
+## 🔌 **NOVO: WebSocket em Tempo Real**
+
+Este frontend está **100% preparado** para receber dados em tempo real via **WebSocket (Socket.IO)**!
+
+### ⚡ Funcionalidades em Tempo Real:
+- ✅ Countdown de tarefas atualiza **a cada segundo**
+- ✅ Múltiplos usuários veem mudanças **instantaneamente**
+- ✅ Progresso de projetos/entregas/serviços sincronizado
+- ✅ Notificações em tempo real
+
+### 📚 Documentação WebSocket:
+- **[BACKEND_WEBSOCKET_SPEC.md](./BACKEND_WEBSOCKET_SPEC.md)** - Especificação completa para backend
+- **[WEBSOCKET_EXAMPLES.tsx](./WEBSOCKET_EXAMPLES.tsx)** - Exemplos de uso nos componentes
+
+### 🛠️ Infraestrutura:
+- `lib/websocket/SocketManager.ts` - Gerenciador de conexão
+- `lib/websocket/SocketContext.tsx` - React Context Provider
+- `app/hooks/useSocket.ts` - Hook para eventos WebSocket
+- `app/hooks/useRealtimeData.ts` - Hooks de dados em tempo real
+
 ## 📁 Estrutura do Projeto
 
 ```
