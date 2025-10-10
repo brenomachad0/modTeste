@@ -253,6 +253,61 @@ socket.emit('get_entrega', { entregaId: '456' });
 socket.emit('leave_room', { room: 'projeto:123' });
 ```
 
+#### 6. **React Flow - Manipulação de Serviços**
+
+**Criar novo serviço (adicionar nó no canvas)**
+```typescript
+socket.emit('create_servico', {
+  entregaId: '456',
+  servico: {
+    nome: 'Novo Serviço',
+    descricao: 'Descrição do serviço',
+    ordem: 3,
+    pode_executar_paralelo: false,
+    dependencias: ['serv_1'], // IDs dos serviços predecessores
+    status: 'nao-iniciado',
+    progresso_percentual: 0
+  }
+});
+```
+
+**Atualizar serviço (mover nó, editar, conectar)**
+```typescript
+socket.emit('update_servico', {
+  entregaId: '456',
+  servico: {
+    id: 's1',
+    dependencias: ['serv_0'], // ← nova conexão criada
+    etapa: 2, // ← recalculado pelo backend após mudança
+  }
+});
+```
+
+**Deletar serviço (remover nó do canvas)**
+```typescript
+socket.emit('delete_servico', {
+  entregaId: '456',
+  servicoId: 's2'
+});
+```
+
+**Recalcular etapas (após mudanças na estrutura)**
+```typescript
+socket.emit('recalcular_etapas', { entregaId: '456' });
+```
+
+**Salvar layout completo (após reorganizar vários nós)**
+```typescript
+socket.emit('update_servicos_bulk', {
+  entregaId: '456',
+  servicos: [
+    { id: 's1', ordem: 1, etapa: 1 },
+    { id: 's2', ordem: 2, etapa: 2 },
+    { id: 's3', ordem: 3, etapa: 2 }, // paralelo com s2
+  ]
+});
+```
+
 ---
 
 ### 📤 Eventos que o BACKEND envia (servidor → cliente)
@@ -534,6 +589,26 @@ io.to('entrega:e1').emit('tarefa_created', {
 **Tarefa Deletada**
 ```typescript
 io.to('entrega:e1').emit('tarefa_deleted', { tarefaId: 't2' });
+```
+
+**Novo Serviço Criado (React Flow - novo nó)**
+```typescript
+io.to('entrega:e1').emit('servico_created', {
+  id: 's3',
+  nome: 'Novo Serviço',
+  status: 'nao-iniciado',
+  progresso_percentual: 0,
+  ordem: 3,
+  etapa: null,
+  pode_executar_paralelo: false,
+  dependencias: [],
+  tarefas: []
+});
+```
+
+**Serviço Deletado (React Flow - remover nó)**
+```typescript
+io.to('entrega:e1').emit('servico_deleted', { servicoId: 's2' });
 ```
 
 #### 5. **Eventos Globais**

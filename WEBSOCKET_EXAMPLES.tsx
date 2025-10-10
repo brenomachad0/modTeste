@@ -263,3 +263,152 @@ export function RoomComponent({ roomId }: { roomId: string }) {
 
   return <div>Conectado à sala: {roomId}</div>;
 }
+
+// ============================================
+// EXEMPLO 7: React Flow - Manipulação de Serviços
+// ============================================
+
+'use client';
+
+import { useRealtimeFlow } from '@/app/hooks/useRealtimeFlow';
+import { useRealtimeEntrega } from '@/app/hooks/useRealtimeData';
+import ReactFlow, { 
+  Node, 
+  Edge, 
+  Connection, 
+  useNodesState, 
+  useEdgesState 
+} from 'reactflow';
+import { useEffect } from 'react';
+
+export function ServiceFlowCanvas({ entregaId }: { entregaId: string }) {
+  const { entrega, loading } = useRealtimeEntrega(entregaId);
+  const { 
+    updateServico, 
+    createServico, 
+    deleteServico, 
+    updateDependencias,
+    recalcularEtapas,
+    isConnected 
+  } = useRealtimeFlow(entregaId);
+
+  const [nodes, setNodes, onNodesChange] = useNodesState([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+
+  // Converte serviços para nodes/edges do React Flow
+  useEffect(() => {
+    if (!entrega?.servicos) return;
+
+    const newNodes: Node[] = entrega.servicos.map((servico) => ({
+      id: servico.id,
+      position: { x: servico.ordem * 250, y: (servico.etapa || 0) * 150 },
+      data: { 
+        label: servico.nome,
+        servico 
+      },
+      type: 'default',
+    }));
+
+    const newEdges: Edge[] = entrega.servicos.flatMap((servico) =>
+      (servico.dependencias || []).map((depId) => ({
+        id: `${depId}-${servico.id}`,
+        source: depId,
+        target: servico.id,
+        type: 'smoothstep',
+      }))
+    );
+
+    setNodes(newNodes);
+    setEdges(newEdges);
+  }, [entrega, setNodes, setEdges]);
+
+  // Quando um nó é arrastado
+  const onNodeDragStop = (_event: any, node: Node) => {
+    const servico = entrega?.servicos?.find((s) => s.id === node.id);
+    if (!servico) return;
+
+    // Atualiza posição no backend
+    updateServico({
+      id: node.id,
+      ordem: Math.round(node.position.x / 250),
+    });
+  };
+
+  // Quando uma conexão é criada (nova edge)
+  const onConnect = (connection: Connection) => {
+    if (!connection.source || !connection.target) return;
+
+    const targetServico = entrega?.servicos?.find((s) => s.id === connection.target);
+    if (!targetServico) return;
+
+    const newDependencias = [...(targetServico.dependencias || []), connection.source];
+    
+    // Atualiza dependências no backend
+    updateDependencias(connection.target, newDependencias);
+    
+    // Recalcula etapas (BFS)
+    recalcularEtapas();
+  };
+
+  // Quando uma edge é deletada
+  const onEdgesDelete = (edgesToDelete: Edge[]) => {
+    edgesToDelete.forEach((edge) => {
+      const targetServico = entrega?.servicos?.find((s) => s.id === edge.target);
+      if (!targetServico) return;
+
+      const newDependencias = targetServico.dependencias?.filter((id) => id !== edge.source);
+      updateDependencias(edge.target, newDependencias || []);
+    });
+
+    recalcularEtapas();
+  };
+
+  // Quando um nó é deletado
+  const onNodesDelete = (nodesToDelete: Node[]) => {
+    nodesToDelete.forEach((node) => {
+      deleteServico(node.id);
+    });
+  };
+
+  // Adicionar novo serviço
+  const handleAddService = () => {
+    createServico({
+      nome: 'Novo Serviço',
+      descricao: '',
+      ordem: (entrega?.servicos?.length || 0) + 1,
+      etapa: 1,
+      pode_executar_paralelo: false,
+      dependencias: [],
+      status: 'nao-iniciado',
+      progresso_percentual: 0,
+      tarefas: [],
+    });
+  };
+
+  if (loading) return <div>Carregando canvas...</div>;
+
+  return (
+    <div style={{ height: '600px', width: '100%' }}>
+      {/* Indicador de conexão */}
+      <div className={`status ${isConnected ? 'connected' : 'disconnected'}`}>
+        {isConnected ? '🟢 Sincronizado' : '🔴 Offline'}
+      </div>
+
+      <button onClick={handleAddService}>➕ Adicionar Serviço</button>
+
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        onNodeDragStop={onNodeDragStop}
+        onConnect={onConnect}
+        onEdgesDelete={onEdgesDelete}
+        onNodesDelete={onNodesDelete}
+        fitView
+      >
+        {/* Adicione controles, minimap, etc */}
+      </ReactFlow>
+    </div>
+  );
+}

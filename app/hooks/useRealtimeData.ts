@@ -28,6 +28,9 @@ export interface Servico {
   status: Status;
   progresso_percentual: number;
   ordem: number;
+  etapa?: number; // Etapa calculada via BFS (React Flow - posicionamento vertical)
+  pode_executar_paralelo: boolean; // Se pode executar em paralelo com outros serviços
+  dependencias?: string[]; // IDs dos serviços predecessores (React Flow - edges)
   tarefas?: Tarefa[];
   created_at?: string;
   updated_at?: string;
@@ -281,6 +284,34 @@ export const useRealtimeEntrega = (entregaId: string | null) => {
       }
     );
 
+    // Listener para criação de serviços (React Flow - adicionar nó)
+    const unsubscribeServicoCreated = on<Servico>(
+      'servico_created',
+      (newServico) => {
+        setEntrega((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            servicos: [...(prev.servicos || []), newServico],
+          };
+        });
+      }
+    );
+
+    // Listener para deleção de serviços (React Flow - remover nó)
+    const unsubscribeServicoDeleted = on<{ servicoId: string }>(
+      'servico_deleted',
+      ({ servicoId }) => {
+        setEntrega((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            servicos: prev.servicos?.filter((s) => s.id !== servicoId),
+          };
+        });
+      }
+    );
+
     // Listener para erros
     const unsubscribeError = on<{ message: string }>('error', ({ message }) => {
       setError(message);
@@ -295,6 +326,8 @@ export const useRealtimeEntrega = (entregaId: string | null) => {
       unsubscribeTarefaUpdate();
       unsubscribeTarefaCreated();
       unsubscribeTarefaDeleted();
+      unsubscribeServicoCreated();
+      unsubscribeServicoDeleted();
       unsubscribeError();
       leaveRoom(`entrega:${entregaId}`);
     };
