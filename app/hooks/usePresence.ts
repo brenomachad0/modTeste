@@ -22,7 +22,7 @@ interface UsePresenceOptions {
 export function usePresence(options: UsePresenceOptions) {
   const { emit, on, isConnected } = useSocket();
   const { user_id, user_name, user_avatar, page, page_id, enabled = true } = options;
-  const mouseMoveRef = useRef<NodeJS.Timeout>();
+  const mouseMoveRef = useRef<NodeJS.Timeout | null>(null);
   const lastEmitRef = useRef<number>(0);
   
   const EMIT_THROTTLE_MS = 50; // Envia posição do cursor a cada 50ms
@@ -184,8 +184,18 @@ export function usePresence(options: UsePresenceOptions) {
     if (!isConnected || !enabled) return;
 
     // Usuário entrou
-    const unsubJoined = on('presence:user_joined', (data: UserPresence) => {
-      presenceManager.setUser(data);
+    const unsubJoined = on('presence:user_joined', (data: any) => {
+      console.log('👤 presence:user_joined recebido:', data);
+      if (data.user_id && data.user_id !== user_id) {
+        presenceManager.setUser({
+          user_id: data.user_id,
+          user_name: data.user_name || 'Usuário',
+          user_avatar: data.user_avatar,
+          page: data.page || 'dashboard',
+          page_id: data.page_id,
+          cursor: data.cursor || { x: 0, y: 0, viewport_width: 1920, viewport_height: 1080 },
+        });
+      }
     });
 
     // Usuário saiu
@@ -194,8 +204,16 @@ export function usePresence(options: UsePresenceOptions) {
     });
 
     // Cursor moveu
-    const unsubCursor = on('presence:cursor_moved', (data: UserPresence) => {
-      presenceManager.updateCursor(data.user_id, data.cursor.x, data.cursor.y);
+    const unsubCursor = on('presence:cursor_moved', (data: any) => {
+      console.log('🖱️ presence:cursor_moved recebido:', data);
+      // Backend pode enviar formato diferente, vamos adaptar
+      const x = data.x ?? data.cursor?.x ?? 0;
+      const y = data.y ?? data.cursor?.y ?? 0;
+      const userId = data.user_id;
+      
+      if (userId && userId !== user_id) {
+        presenceManager.updateCursor(userId, x, y);
+      }
     });
 
     // Alguém começou/parou de editar

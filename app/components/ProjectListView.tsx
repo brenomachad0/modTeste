@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { mockProjetos, calcularEstatisticas, type Projeto } from '../../data/mockData';
+import { useProjetos, type Projeto } from '../hooks/useProjetos';
 import { 
   RefreshCw, Clock, Building, Flag, Calendar, 
   TrendingUp, AlertCircle, CheckCircle, Package, Users,
@@ -16,6 +16,84 @@ const ProjectCard: React.FC<{
   project: Projeto;
   onClick: (project: Projeto) => void;
 }> = ({ project, onClick }) => {
+  const [currentTime, setCurrentTime] = useState(new Date());
+
+  // Atualizar tempo a cada segundo para o countdown
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // Função para calcular e formatar o countdown
+  const formatCountdown = () => {
+    // Verifica se existe prazo_data
+    if (!project.prazo_data) {
+      return null;
+    }
+
+    // Tenta parsear a data - pode vir como ISO ou apenas data (YYYY-MM-DD)
+    let prazo: Date;
+    try {
+      // Se é apenas data, adiciona horário para evitar problemas de timezone
+      if (project.prazo_data.includes('T')) {
+        prazo = new Date(project.prazo_data);
+      } else {
+        // Adiciona T23:59:59 para considerar fim do dia
+        prazo = new Date(`${project.prazo_data}T23:59:59`);
+      }
+      
+      // Verifica se é data válida
+      if (isNaN(prazo.getTime())) {
+        console.warn('Data inválida:', project.prazo_data);
+        return null;
+      }
+    } catch (e) {
+      console.warn('Erro ao parsear prazo_data:', project.prazo_data, e);
+      return null;
+    }
+
+    const diffMs = prazo.getTime() - currentTime.getTime();
+    
+    // Se o prazo já passou
+    if (diffMs <= 0) {
+      const absDiffMs = Math.abs(diffMs);
+      const days = Math.floor(absDiffMs / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((absDiffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      const minutes = Math.floor((absDiffMs % (1000 * 60 * 60)) / (1000 * 60));
+      const seconds = Math.floor((absDiffMs % (1000 * 60)) / 1000);
+      
+      return {
+        display: `${days.toString().padStart(2, '0')} ${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`,
+        color: 'text-red-500',
+        label: 'ATRASADO'
+      };
+    }
+
+    // Countdown normal
+    const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+    const seconds = Math.floor((diffMs % (1000 * 60)) / 1000);
+    
+    // Cores baseadas no tempo restante
+    let color = 'text-green-400'; // > 7 dias
+    if (days < 7 && days >= 3) {
+      color = 'text-yellow-400'; // 3-7 dias
+    } else if (days < 3) {
+      color = 'text-orange-400'; // < 3 dias
+    }
+
+    return {
+      display: `${days.toString().padStart(2, '0')} ${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`,
+      color,
+      label: 'PRAZO'
+    };
+  };
+
+  const countdown = formatCountdown();
   
   const getStatusConfig = (status: string) => {
     switch (status) {
@@ -71,29 +149,7 @@ const ProjectCard: React.FC<{
     }
   };
 
-  // Formatar data de entrega
-  const formatDeliveryDate = (dateString?: string) => {
-    if (!dateString) return null;
-    
-    try {
-      const date = new Date(dateString);
-      const day = date.getDate().toString().padStart(2, '0');
-      const month = (date.getMonth() + 1).toString().padStart(2, '0');
-      const year = date.getFullYear().toString().slice(-2); // Últimos 2 dígitos do ano
-      const hours = date.getHours().toString().padStart(2, '0');
-      const minutes = date.getMinutes().toString().padStart(2, '0');
-      const seconds = date.getSeconds().toString().padStart(2, '0');
-      
-      return {
-        date: `${day}/${month}/${year}`,
-        time: `${hours}:${minutes}:${seconds}`
-      };
-    } catch {
-      return null;
-    }
-  };
 
-  const deliveryDate = formatDeliveryDate(project.prazo_data);
 
   return (
     <div 
@@ -125,17 +181,14 @@ const ProjectCard: React.FC<{
           </div>
         </div>
 
-        {/* Data estimada de entrega (direita) */}
-        {deliveryDate && (
-          <div className="flex items-center gap-1.5 flex-shrink-0">
-            <Calendar className="w-4 h-4 text-blue-400 flex-shrink-0" />
-            <div className="flex flex-col items-start text-left">
-              <div className="text-sm font-semibold text-gray-300 leading-tight">
-                {deliveryDate.date}
-              </div>
-              <div className="text-sm text-gray-400 leading-tight font-medium">
-                {deliveryDate.time}
-              </div>
+        {/* Countdown de prazo (direita) */}
+        {countdown && (
+          <div className="flex flex-col items-end justify-center flex-shrink-0">
+            <div className={`text-xs font-bold ${countdown.color} leading-tight mb-0.5`}>
+              {countdown.label}
+            </div>
+            <div className={`text-base font-mono font-bold ${countdown.color} leading-tight tracking-tight`}>
+              {countdown.display}
             </div>
           </div>
         )}
@@ -155,36 +208,190 @@ const ProjectCard: React.FC<{
   );
 };
 
-// Componente de abas
+// Componente de abas com controles de ordenação integrados
 const TabSelector: React.FC<{
   activeTab: 'projetos' | 'tarefas';
   onTabChange: (tab: 'projetos' | 'tarefas') => void;
-}> = ({ activeTab, onTabChange }) => (
-  <div className="flex items-center bg-gray-800/30 backdrop-blur-sm border border-gray-700/50 rounded-lg p-1 mb-6">
-    <button
-      onClick={() => onTabChange('projetos')}
-      className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
-        activeTab === 'projetos'
-          ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30'
-          : 'text-gray-400 hover:text-gray-300 hover:bg-gray-700/30'
-      }`}
-    >
-      <Package className="w-4 h-4" />
-      Projetos
-    </button>
-    <button
-      onClick={() => onTabChange('tarefas')}
-      className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
-        activeTab === 'tarefas'
-          ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30'
-          : 'text-gray-400 hover:text-gray-300 hover:bg-gray-700/30'
-      }`}
-    >
-      <CheckCircle className="w-4 h-4" />
-      Tarefas
-    </button>
-  </div>
-);
+  // Props para ordenação de projetos
+  projectSortBy: 'prazo_entrega' | 'codigo';
+  projectSortOrder: 'asc' | 'desc';
+  onProjectSortByChange: (sortBy: 'prazo_entrega' | 'codigo') => void;
+  onProjectSortOrderChange: (order: 'asc' | 'desc') => void;
+  // Props para ordenação de tarefas
+  taskSortBy: 'prazo' | 'alfabeto';
+  taskSortOrder: 'asc' | 'desc';
+  onTaskSortByChange: (sortBy: 'prazo' | 'alfabeto') => void;
+  onTaskSortOrderChange: (order: 'asc' | 'desc') => void;
+}> = ({ 
+  activeTab, 
+  onTabChange,
+  projectSortBy,
+  projectSortOrder,
+  onProjectSortByChange,
+  onProjectSortOrderChange,
+  taskSortBy,
+  taskSortOrder,
+  onTaskSortByChange,
+  onTaskSortOrderChange
+}) => {
+  
+  const handleProjectSortToggle = (newSortBy: 'prazo_entrega' | 'codigo') => {
+    if (projectSortBy === newSortBy) {
+      onProjectSortOrderChange(projectSortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      onProjectSortByChange(newSortBy);
+      onProjectSortOrderChange('asc');
+    }
+  };
+
+  const handleTaskSortToggle = (newSortBy: 'prazo' | 'alfabeto') => {
+    if (taskSortBy === newSortBy) {
+      onTaskSortOrderChange(taskSortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      onTaskSortByChange(newSortBy);
+      onTaskSortOrderChange('desc');
+    }
+  };
+
+  return (
+    <div className="flex items-center justify-between bg-gray-800/30 backdrop-blur-sm border border-gray-700/50 rounded-lg p-1 mb-6">
+      {/* Abas de seleção */}
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => onTabChange('projetos')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
+            activeTab === 'projetos'
+              ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30'
+              : 'text-gray-400 hover:text-gray-300 hover:bg-gray-700/30'
+          }`}
+        >
+          <Package className="w-4 h-4" />
+          Projetos
+        </button>
+        <button
+          onClick={() => onTabChange('tarefas')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
+            activeTab === 'tarefas'
+              ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30'
+              : 'text-gray-400 hover:text-gray-300 hover:bg-gray-700/30'
+          }`}
+        >
+          <CheckCircle className="w-4 h-4" />
+          Tarefas
+        </button>
+      </div>
+
+      {/* Controles de ordenação - aparecem de acordo com a aba ativa */}
+      <div className="flex items-center gap-1">
+        {activeTab === 'projetos' ? (
+          <>
+            {/* Ordenação por prazo de entrega */}
+            <button
+              onClick={() => handleProjectSortToggle('prazo_entrega')}
+              className={`p-2 rounded-lg transition-all relative ${
+                projectSortBy === 'prazo_entrega'
+                  ? 'text-blue-400 bg-blue-500/20'
+                  : 'text-gray-400 hover:text-gray-300 hover:bg-gray-700/50'
+              }`}
+              title={projectSortBy === 'prazo_entrega' 
+                ? (projectSortOrder === 'asc' ? 'Prazos mais próximos primeiro' : 'Prazos mais distantes primeiro')
+                : 'Ordenar por prazo de entrega'
+              }
+            >
+              <Calendar className="w-4 h-4" />
+              {projectSortBy === 'prazo_entrega' && (
+                <div className="absolute -top-1 -right-1">
+                  {projectSortOrder === 'asc' ? (
+                    <ArrowUp className="w-2 h-2 text-blue-400" />
+                  ) : (
+                    <ArrowDown className="w-2 h-2 text-blue-400" />
+                  )}
+                </div>
+              )}
+            </button>
+
+            {/* Ordenação por código */}
+            <button
+              onClick={() => handleProjectSortToggle('codigo')}
+              className={`p-2 rounded-lg transition-all relative ${
+                projectSortBy === 'codigo'
+                  ? 'text-blue-400 bg-blue-500/20'
+                  : 'text-gray-400 hover:text-gray-300 hover:bg-gray-700/50'
+              }`}
+              title={projectSortBy === 'codigo'
+                ? (projectSortOrder === 'asc' ? 'Ordem numérica crescente' : 'Ordem numérica decrescente')
+                : 'Ordenar por código numérico'
+              }
+            >
+              <SortAsc className="w-4 h-4" />
+              {projectSortBy === 'codigo' && (
+                <div className="absolute -top-1 -right-1">
+                  {projectSortOrder === 'asc' ? (
+                    <ArrowUp className="w-2 h-2 text-blue-400" />
+                  ) : (
+                    <ArrowDown className="w-2 h-2 text-blue-400" />
+                  )}
+                </div>
+              )}
+            </button>
+          </>
+        ) : (
+          <>
+            {/* Ordenação por prazo de tarefa */}
+            <button
+              onClick={() => handleTaskSortToggle('prazo')}
+              className={`p-2 rounded-lg transition-all relative ${
+                taskSortBy === 'prazo'
+                  ? 'text-blue-400 bg-blue-500/20'
+                  : 'text-gray-400 hover:text-gray-300 hover:bg-gray-700/50'
+              }`}
+              title={taskSortBy === 'prazo' 
+                ? (taskSortOrder === 'asc' ? 'Prazos mais apertados primeiro' : 'Prazos mais folgados primeiro')
+                : 'Ordenar por prazo mais apertado'
+              }
+            >
+              <CalendarClock className="w-4 h-4" />
+              {taskSortBy === 'prazo' && (
+                <div className="absolute -top-1 -right-1">
+                  {taskSortOrder === 'asc' ? (
+                    <ArrowUp className="w-2 h-2 text-blue-400" />
+                  ) : (
+                    <ArrowDown className="w-2 h-2 text-blue-400" />
+                  )}
+                </div>
+              )}
+            </button>
+
+            {/* Ordenação alfabética */}
+            <button
+              onClick={() => handleTaskSortToggle('alfabeto')}
+              className={`p-2 rounded-lg transition-all relative ${
+                taskSortBy === 'alfabeto'
+                  ? 'text-blue-400 bg-blue-500/20'
+                  : 'text-gray-400 hover:text-gray-300 hover:bg-gray-700/50'
+              }`}
+              title={taskSortBy === 'alfabeto'
+                ? (taskSortOrder === 'asc' ? 'Alfabética A → Z' : 'Alfabética Z → A')
+                : 'Ordenar alfabeticamente'
+              }
+            >
+              <SortAsc className="w-4 h-4" />
+              {taskSortBy === 'alfabeto' && (
+                <div className="absolute -top-1 -right-1">
+                  {taskSortOrder === 'asc' ? (
+                    <ArrowUp className="w-2 h-2 text-blue-400" />
+                  ) : (
+                    <ArrowDown className="w-2 h-2 text-blue-400" />
+                  )}
+                </div>
+              )}
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
 
 // Componente de card de tarefa simplificado
 const TaskCard: React.FC<{
@@ -387,160 +594,12 @@ const TaskCard: React.FC<{
   );
 };
 
-// Componente de controles de ordenação
-const SortControls: React.FC<{
-  sortBy: 'prazo' | 'alfabeto';
-  sortOrder: 'asc' | 'desc';
-  onSortByChange: (sortBy: 'prazo' | 'alfabeto') => void;
-  onSortOrderChange: (order: 'asc' | 'desc') => void;
-}> = ({ sortBy, sortOrder, onSortByChange, onSortOrderChange }) => {
-  
-  const handleSortToggle = (newSortBy: 'prazo' | 'alfabeto') => {
-    if (sortBy === newSortBy) {
-      // Se é o mesmo critério, alterna a direção
-      onSortOrderChange(sortOrder === 'asc' ? 'desc' : 'asc');
-    } else {
-      // Se é critério diferente, muda o critério e começa com decrescente
-      onSortByChange(newSortBy);
-      onSortOrderChange('desc');
-    }
-  };
-
-  return (
-    <div className="flex items-center gap-1">
-      {/* Botão de ordenação por prazo */}
-      <button
-        onClick={() => handleSortToggle('prazo')}
-        className={`p-2 rounded-lg transition-all relative ${
-          sortBy === 'prazo'
-            ? 'text-blue-400 bg-blue-500/20'
-            : 'text-gray-400 hover:text-gray-300 hover:bg-gray-700/50'
-        }`}
-        title={sortBy === 'prazo' 
-          ? (sortOrder === 'asc' ? 'Prazos mais apertados primeiro' : 'Prazos mais folgados primeiro')
-          : 'Ordenar por prazo mais apertado'
-        }
-      >
-        <CalendarClock className="w-4 h-4" />
-        {sortBy === 'prazo' && (
-          <div className="absolute -top-1 -right-1">
-            {sortOrder === 'asc' ? (
-              <ArrowUp className="w-2 h-2 text-blue-400" />
-            ) : (
-              <ArrowDown className="w-2 h-2 text-blue-400" />
-            )}
-          </div>
-        )}
-      </button>
-
-      {/* Botão de ordenação alfabética */}
-      <button
-        onClick={() => handleSortToggle('alfabeto')}
-        className={`p-2 rounded-lg transition-all relative ${
-          sortBy === 'alfabeto'
-            ? 'text-blue-400 bg-blue-500/20'
-            : 'text-gray-400 hover:text-gray-300 hover:bg-gray-700/50'
-        }`}
-        title={sortBy === 'alfabeto'
-          ? (sortOrder === 'asc' ? 'Alfabética A → Z' : 'Alfabética Z → A')
-          : 'Ordenar alfabeticamente'
-        }
-      >
-        <SortAsc className="w-4 h-4" />
-        {sortBy === 'alfabeto' && (
-          <div className="absolute -top-1 -right-1">
-            {sortOrder === 'asc' ? (
-              <ArrowUp className="w-2 h-2 text-blue-400" />
-            ) : (
-              <ArrowDown className="w-2 h-2 text-blue-400" />
-            )}
-          </div>
-        )}
-      </button>
-    </div>
-  );
-};
-
-// Componente de controles de ordenação para projetos
-const ProjectSortControls: React.FC<{
-  sortBy: 'prazo_entrega' | 'codigo';
-  sortOrder: 'asc' | 'desc';
-  onSortByChange: (sortBy: 'prazo_entrega' | 'codigo') => void;
-  onSortOrderChange: (order: 'asc' | 'desc') => void;
-}> = ({ sortBy, sortOrder, onSortByChange, onSortOrderChange }) => {
-  
-  const handleSortToggle = (newSortBy: 'prazo_entrega' | 'codigo') => {
-    if (sortBy === newSortBy) {
-      // Se é o mesmo critério, alterna a direção
-      onSortOrderChange(sortOrder === 'asc' ? 'desc' : 'asc');
-    } else {
-      // Se é critério diferente, muda o critério e começa com ascendente
-      onSortByChange(newSortBy);
-      onSortOrderChange('asc');
-    }
-  };
-
-  return (
-    <div className="flex items-center gap-1">
-      {/* Botão de ordenação por prazo de entrega */}
-      <button
-        onClick={() => handleSortToggle('prazo_entrega')}
-        className={`p-2 rounded-lg transition-all relative ${
-          sortBy === 'prazo_entrega'
-            ? 'text-blue-400 bg-blue-500/20'
-            : 'text-gray-400 hover:text-gray-300 hover:bg-gray-700/50'
-        }`}
-        title={sortBy === 'prazo_entrega' 
-          ? (sortOrder === 'asc' ? 'Prazos mais próximos primeiro' : 'Prazos mais distantes primeiro')
-          : 'Ordenar por prazo de entrega'
-        }
-      >
-        <Calendar className="w-4 h-4" />
-        {sortBy === 'prazo_entrega' && (
-          <div className="absolute -top-1 -right-1">
-            {sortOrder === 'asc' ? (
-              <ArrowUp className="w-2 h-2 text-blue-400" />
-            ) : (
-              <ArrowDown className="w-2 h-2 text-blue-400" />
-            )}
-          </div>
-        )}
-      </button>
-
-      {/* Botão de ordenação por código */}
-      <button
-        onClick={() => handleSortToggle('codigo')}
-        className={`p-2 rounded-lg transition-all relative ${
-          sortBy === 'codigo'
-            ? 'text-blue-400 bg-blue-500/20'
-            : 'text-gray-400 hover:text-gray-300 hover:bg-gray-700/50'
-        }`}
-        title={sortBy === 'codigo'
-          ? (sortOrder === 'asc' ? 'Ordem numérica crescente' : 'Ordem numérica decrescente')
-          : 'Ordenar por código numérico'
-        }
-      >
-        <SortAsc className="w-4 h-4" />
-        {sortBy === 'codigo' && (
-          <div className="absolute -top-1 -right-1">
-            {sortOrder === 'asc' ? (
-              <ArrowUp className="w-2 h-2 text-blue-400" />
-            ) : (
-              <ArrowDown className="w-2 h-2 text-blue-400" />
-            )}
-          </div>
-        )}
-      </button>
-    </div>
-  );
-};
-
 // Componente principal da lista de projetos
 const ProjectListView: React.FC = () => {
   const router = useRouter();
-  const [projetos] = useState<Projeto[]>(mockProjetos);
-  const [isLoading, setIsLoading] = useState(true);
-  const [lastSync, setLastSync] = useState<Date | null>(null);
+  
+  // Busca projetos da API com WebSocket em tempo real
+  const { projetos, isLoading, error, refetch, lastSync } = useProjetos();
   const [selectedProject, setSelectedProject] = useState<Projeto | null>(null);
   const [activeTab, setActiveTab] = useState<'projetos' | 'tarefas'>('projetos');
   const [sortBy, setSortBy] = useState<'prazo' | 'alfabeto'>('prazo');
@@ -552,11 +611,20 @@ const ProjectListView: React.FC = () => {
   const [selectedTask, setSelectedTask] = useState<any | null>(null);
   const [showTaskViewModal, setShowTaskViewModal] = useState(false);
 
+  // 🔥 Navega para página de detalhes quando projeto é selecionado
+  useEffect(() => {
+    if (showProjectDetail && selectedProject) {
+      router.push(`/projetos/${selectedProject.id}`);
+      setShowProjectDetail(false);
+      setSelectedProject(null);
+    }
+  }, [showProjectDetail, selectedProject, router]);
+
   // Extrair todas as tarefas de todos os projetos, enriquecendo com info de projeto e entrega
   const allTasks = projetos.flatMap(projeto => 
     projeto.entregas?.flatMap(entrega => 
-      entrega.servicos?.flatMap(servico => 
-        (servico.tarefas || []).map(tarefa => ({
+      entrega.servicos?.flatMap((servico: any) => 
+        (servico.tarefas || []).map((tarefa: any) => ({
           ...tarefa,
           // Enriquecer com informações de contexto
           projeto_id: projeto.id,
@@ -647,13 +715,25 @@ const ProjectListView: React.FC = () => {
         return projectSortOrder === 'asc' ? dateA - dateB : dateB - dateA;
       } else {
         // Ordenação por código numérico (extrai o ano e número do código)
-        const extractNumber = (codigo: string) => {
-          // Exemplo: "2024-0045" ou "2025-0001"
-          const match = codigo.match(/(\d{4})-(\d+)/);
+        const extractNumber = (codigo: string | null | undefined) => {
+          // Validar se codigo é string válida
+          if (!codigo || typeof codigo !== 'string') {
+            return 0;
+          }
+          
+          // Tentar diferentes formatos: A2015, 2024-123, etc
+          const match = codigo.match(/(\d{4})-?(\d+)/) || codigo.match(/[A-Z](\d+)/);
           if (match) {
-            const year = parseInt(match[1]);
-            const num = parseInt(match[2]);
-            return year * 100000 + num; // Combina ano e número para ordenação correta
+            if (match.length === 3) {
+              // Formato: 2024-123
+              const year = parseInt(match[1]);
+              const num = parseInt(match[2]);
+              return year * 100000 + num;
+            } else {
+              // Formato: A2015
+              const num = parseInt(match[1]);
+              return num;
+            }
           }
           return 0;
         };
@@ -666,19 +746,6 @@ const ProjectListView: React.FC = () => {
   };
 
   const sortedProjects = sortProjects(projetos);
-
-  // Simular carregamento inicial
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setIsLoading(false);
-      setLastSync(new Date());
-    }, 800);
-
-    return () => clearTimeout(timer);
-  }, []);
-
-  // Calcular estatísticas
-  const stats = calcularEstatisticas(projetos);
 
   const handleProjectClick = (project: Projeto) => {
     setSelectedProject(project);
@@ -730,11 +797,7 @@ const ProjectListView: React.FC = () => {
   };
 
   const handleRefresh = () => {
-    setIsLoading(true);
-    setTimeout(() => {
-      setIsLoading(false);
-      setLastSync(new Date());
-    }, 800);
+    refetch(); // Usa a função refetch do hook
   };
 
   if (isLoading) {
@@ -781,96 +844,52 @@ const ProjectListView: React.FC = () => {
     );
   }
 
-  // Se está mostrando detalhes do projeto, renderizar o ProjectDetail
-  if (showProjectDetail && selectedProject) {
-    return (
-      <ProjectDetail
-        project={selectedProject as any}
-        router={null}
-        editingServiceId={editingServiceId}
-        onStartEditing={handleStartEditing}
-        onStopEditing={handleStopEditing}
-        onBackToList={handleBackToList}
-        onDeliveryClick={handleDeliveryClick}
-      />
-    );
-  }
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 p-6">
       <div className="container mx-auto max-w-4xl">
-        {/* Header atualizado */}
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h1 className="text-2xl font-bold text-white">
-              Fabricação Mandrill
-            </h1>
-          </div>
-          <div className="flex items-center gap-3">
-            {lastSync && (
-              <span className="text-gray-400 text-sm">
-                Última sincronização: {lastSync.toLocaleTimeString('pt-BR')}
-              </span>
-            )}
-            <button
-              onClick={handleRefresh}
-              className="flex items-center gap-2 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-400 px-3 py-1.5 rounded-lg transition-all duration-200 backdrop-blur-sm text-sm"
-            >
-              <RefreshCw className="w-3 h-3" />
-              Atualizar
-            </button>
-          </div>
+        {/* Header */}
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold text-white">
+            Fabricação Mandrill
+          </h1>
         </div>
 
-        {/* Seletor de abas */}
-        <TabSelector activeTab={activeTab} onTabChange={handleTabChange} />
+        {/* Seletor de abas com controles de ordenação integrados */}
+        <TabSelector 
+          activeTab={activeTab} 
+          onTabChange={handleTabChange}
+          projectSortBy={projectSortBy}
+          projectSortOrder={projectSortOrder}
+          onProjectSortByChange={setProjectSortBy}
+          onProjectSortOrderChange={setProjectSortOrder}
+          taskSortBy={sortBy}
+          taskSortOrder={sortOrder}
+          onTaskSortByChange={setSortBy}
+          onTaskSortOrderChange={setSortOrder}
+        />
 
         {/* Lista condicional baseada na aba ativa */}
         {activeTab === 'projetos' ? (
-          <div>
-            {/* Controles de ordenação para projetos - alinhados à direita */}
-            <div className="flex justify-end mb-3">
-              <ProjectSortControls
-                sortBy={projectSortBy}
-                sortOrder={projectSortOrder}
-                onSortByChange={setProjectSortBy}
-                onSortOrderChange={setProjectSortOrder}
+          <div className="space-y-1">
+            {sortedProjects.map(project => (
+              <ProjectCard
+                key={project.id}
+                project={project}
+                onClick={handleProjectClick}
               />
-            </div>
-            
-            <div className="space-y-1">
-              {sortedProjects.map(project => (
-                <ProjectCard
-                  key={project.id}
-                  project={project}
-                  onClick={handleProjectClick}
-                />
-              ))}
-            </div>
+            ))}
           </div>
         ) : (
-          <div>
-            {/* Controles de ordenação para tarefas - alinhados à direita */}
-            <div className="flex justify-end mb-3">
-              <SortControls
-                sortBy={sortBy}
-                sortOrder={sortOrder}
-                onSortByChange={setSortBy}
-                onSortOrderChange={setSortOrder}
+          <div className="space-y-1">
+            {sortedTasks.map(task => (
+              <TaskCard
+                key={task.id}
+                task={task}
+                onClick={handleTaskClick}
+                onProjectClick={handleProjectClickFromTask}
+                onEntregaClick={handleEntregaClickFromTask}
               />
-            </div>
-            
-            <div className="space-y-1">
-              {sortedTasks.map(task => (
-                <TaskCard
-                  key={task.id}
-                  task={task}
-                  onClick={handleTaskClick}
-                  onProjectClick={handleProjectClickFromTask}
-                  onEntregaClick={handleEntregaClickFromTask}
-                />
-              ))}
-            </div>
+            ))}
           </div>
         )}
 

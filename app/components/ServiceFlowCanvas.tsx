@@ -14,6 +14,7 @@ import ReactFlow, {
   MarkerType,
   Position,
   Handle,
+  useReactFlow,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { CheckCircle, Target, Clock } from 'lucide-react';
@@ -28,15 +29,19 @@ interface Servico {
 
 interface ServiceFlowCanvasProps {
   servicos: Servico[];
+  boardData?: any[]; // Dados do board com posições salvas
   onServicesUpdate?: (servicos: Servico[]) => void;
   onServiceClick?: (serviceId: string) => void;
   onServiceDelete?: (serviceId: string) => void;
   onAddService?: () => void;
   onSaveFlow?: (nodes: Node[], edges: Edge[]) => void;
+  onCancelFlow?: () => void; // 🔥 NOVO: Cancelar alterações
+  selectedServiceId?: string | null; // 🔥 NOVO: ID do serviço selecionado
+  onServiceAddedRef?: React.RefObject<(() => void) | null>; // 🔥 NOVO: Ref para ativar hasChanges ao adicionar
 }
 
 // Componente customizado para os nodes (cards de serviço)
-const ServiceNode = ({ data }: any) => {
+const ServiceNode = ({ data, selected }: any) => {
   const tarefasTotal = data.tarefas?.length || 0;
   const tarefasConcluidas = data.tarefas?.filter((t: any) => t.status === 'concluida').length || 0;
   const progresso = tarefasTotal > 0 ? Math.round((tarefasConcluidas / tarefasTotal) * 100) : 0;
@@ -51,38 +56,52 @@ const ServiceNode = ({ data }: any) => {
     }
   };
 
-  const canDelete = ['planejada', 'proxima'].includes(data.status) && !data.isStartNode && !data.isEndNode;
-  const isSpecialNode = data.isStartNode || data.isEndNode;
+  const canDelete = ['planejada', 'proxima'].includes(data.status) && !data.isSystemNode;
+  const isSystemNode = data.isSystemNode || data.boardType === 'orcamento' || data.boardType === 'entrega';
+  
+  // 🔥 NOVO: Verificar se está selecionado
+  const isSelected = data.isSelected || selected;
 
-  // Renderização especial para nós OA e JA (sem stats nem progresso)
-  if (isSpecialNode) {
+  // 🔥 Renderização especial para nós de sistema (Orçamento e Entrega)
+  if (isSystemNode) {
+    // 🎨 Formato "C" para Início (circular à esquerda) e "D" para Fim (circular à direita)
+    const isInicio = data.boardType === 'orcamento';
+    const isFim = data.boardType === 'entrega';
+    
     return (
       <div 
-        className="bg-gray-800 border-2 border-gray-700 rounded-lg p-6 min-w-[280px] shadow-xl transition-all relative"
+        className={`bg-gray-800 border-2 p-4 min-w-[180px] max-w-[180px] shadow-xl transition-all relative ${
+          isSelected ? 'border-purple-400 ring-4 ring-purple-400/50' : 'border-purple-500'
+        }`}
+        style={{
+          borderRadius: isInicio 
+            ? '9999px 1rem 1rem 9999px' // C: circular esquerda, rounded direita
+            : isFim 
+            ? '1rem 9999px 9999px 1rem' // D: rounded esquerda, circular direita
+            : '0.5rem'
+        }}
       >
-        {/* Handle de Entrada (esquerda) - apenas no JA */}
-        {data.isEndNode && (
-          <Handle
-            type="target"
-            position={Position.Left}
-            className="w-4 h-4 !bg-green-500 !border-2 !border-white"
-            style={{ left: -8 }}
-          />
-        )}
+        {/* 🔥 SEMPRE adicionar AMBOS handles (para permitir conexões), mas só mostrar o necessário */}
         
-        {/* Handle de Saída (direita) - apenas no OA */}
-        {data.isStartNode && (
-          <Handle
-            type="source"
-            position={Position.Right}
-            className="w-4 h-4 !bg-blue-500 !border-2 !border-white"
-            style={{ right: -8 }}
-          />
-        )}
+        {/* Handle de Entrada (esquerda) - SEMPRE presente, visível apenas na Entrega */}
+        <Handle
+          type="target"
+          position={Position.Left}
+          className={`w-4 h-4 !bg-green-500 !border-2 !border-white ${data.boardType !== 'entrega' ? '!opacity-0 pointer-events-none' : ''}`}
+          style={{ left: -8 }}
+        />
+        
+        {/* Handle de Saída (direita) - SEMPRE presente, visível apenas no Orçamento */}
+        <Handle
+          type="source"
+          position={Position.Right}
+          className={`w-4 h-4 !bg-blue-500 !border-2 !border-white ${data.boardType !== 'orcamento' ? '!opacity-0 pointer-events-none' : ''}`}
+          style={{ right: -8 }}
+        />
 
-        {/* Título Centralizado sem tag */}
+        {/* Título Centralizado */}
         <div className="text-center">
-          <h3 className="font-semibold text-white text-lg">{data.nome}</h3>
+          <h3 className="font-semibold text-white text-base">{data.nome}</h3>
         </div>
       </div>
     );
@@ -90,7 +109,11 @@ const ServiceNode = ({ data }: any) => {
 
   return (
     <div 
-      className="bg-gray-800 border-2 border-gray-700 rounded-lg p-4 min-w-[280px] shadow-xl hover:shadow-2xl transition-all hover:border-purple-500 cursor-pointer relative"
+      className={`bg-gray-800 border-2 rounded-lg p-4 min-w-[280px] shadow-xl transition-all cursor-pointer relative ${
+        isSelected 
+          ? 'border-purple-500 ring-4 ring-purple-500/50 shadow-2xl shadow-purple-500/30' 
+          : 'border-gray-700 hover:border-purple-500 hover:shadow-2xl'
+      }`}
       onClick={() => data.onServiceClick?.(data.id)}
     >
       {/* Handle de Entrada (esquerda) */}
@@ -109,42 +132,30 @@ const ServiceNode = ({ data }: any) => {
         style={{ right: -8 }}
       />
 
-      {/* Header com botão de excluir */}
+      {/* Header com título */}
       <div className="flex items-start justify-between mb-3">
         <h3 className="font-semibold text-white text-lg flex-1">{data.nome}</h3>
-        <div className="flex items-center gap-2">
-          <span className={`px-2 py-1 rounded-full text-xs font-bold text-white ${getStatusColor(data.status)}`}>
-            {data.status === 'executando' ? 'Em Execução' : 
-             data.status === 'concluida' ? 'Concluído' : 
-             data.status === 'pausada' ? 'Pausado' : 
-             data.status === 'proxima' ? 'Aguardando' : 'Planejado'}
-          </span>
-          {canDelete && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                data.onDelete?.(data.id);
-              }}
-              className="p-1 hover:bg-red-500/20 rounded text-red-400 hover:text-red-300 transition-colors"
-              title="Excluir serviço"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          )}
-        </div>
       </div>
 
-      {/* Stats */}
-      <div className="flex items-center gap-4 text-sm text-gray-400 mb-3">
-        <span className="flex items-center gap-1">
-          <Target className="w-4 h-4" />
-          {tarefasTotal} tarefas
-        </span>
-        <span className="flex items-center gap-1">
-          <CheckCircle className="w-4 h-4" />
-          {tarefasConcluidas} OK
+      {/* Stats das tarefas + Status na mesma linha */}
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-4 text-sm text-gray-400">
+          <span className="flex items-center gap-1">
+            <Target className="w-4 h-4" />
+            {tarefasTotal} tarefas
+          </span>
+          <span className="flex items-center gap-1">
+            <CheckCircle className="w-4 h-4" />
+            {tarefasConcluidas} OK
+          </span>
+        </div>
+        
+        {/* Tag de Status - Agora na mesma linha, à direita */}
+        <span className={`px-2 py-1 rounded-full text-xs font-bold text-white ${getStatusColor(data.status)}`}>
+          {data.status === 'executando' ? 'Em Execução' : 
+           data.status === 'concluida' ? 'Concluído' : 
+           data.status === 'pausada' ? 'Pausado' : 
+           data.status === 'proxima' ? 'Aguardando' : 'Planejado'}
         </span>
       </div>
 
@@ -169,125 +180,290 @@ const nodeTypes = {
   serviceNode: ServiceNode,
 };
 
+// Componente interno que usa useReactFlow
+function FlowContent({ 
+  initialLoad 
+}: { 
+  initialLoad: boolean 
+}) {
+  const { fitView } = useReactFlow();
+  
+  // Chamar fitView apenas na primeira carga
+  React.useEffect(() => {
+    if (initialLoad) {
+      // Dar tempo para os nodes renderizarem
+      setTimeout(() => {
+        fitView({ padding: 0.2, duration: 400 });
+      }, 100);
+    }
+  }, [initialLoad, fitView]);
+  
+  return null;
+}
+
 export default function ServiceFlowCanvas({
   servicos,
+  boardData = [],
   onServicesUpdate,
   onServiceClick,
   onServiceDelete,
   onAddService,
-  onSaveFlow
+  onSaveFlow,
+  onCancelFlow, // 🔥 NOVO
+  selectedServiceId = null, // 🔥 NOVO
+  onServiceAddedRef, // 🔥 NOVO: Ref para ativar hasChanges ao adicionar
 }: ServiceFlowCanvasProps) {
   const [showMiniMap, setShowMiniMap] = useState(false);
   const [hideTimeout, setHideTimeout] = useState<NodeJS.Timeout | null>(null);
   const [hasChanges, setHasChanges] = useState(false);
-  const [edgeToDelete, setEdgeToDelete] = useState<Edge | null>(null);  // Converter serviços para nodes do React Flow com START e FIM
-  const serviceNodes: Node[] = servicos.map((servico, index) => ({
-    id: servico.id,
-    type: 'serviceNode',
-    position: { x: 250 + index * 350, y: 100 + (index % 2) * 200 },
-    data: {
-      ...servico,
-      onServiceClick,
-      onDelete: onServiceDelete,
-    },
-    sourcePosition: Position.Right,
-    targetPosition: Position.Left,
-  }));
+  const [edgeToDelete, setEdgeToDelete] = useState<Edge | null>(null);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const hasInitialized = React.useRef(false);
+  
+  // 🔥 NOVO: Conectar ref para permitir que o pai ative hasChanges ao adicionar serviço
+  React.useEffect(() => {
+    if (onServiceAddedRef) {
+      onServiceAddedRef.current = () => {
+        console.log('🔔 Serviço adicionado - ativando modo edição');
+        setHasChanges(true);
+      };
+    }
+    
+    // Cleanup
+    return () => {
+      if (onServiceAddedRef) {
+        onServiceAddedRef.current = null;
+      }
+    };
+  }, [onServiceAddedRef]);
+  
+  // 🔥 MEMOIZAR nodes iniciais para não recriar a cada render
+  const initialNodes = React.useMemo(() => {
+    // 🔥 MUDANÇA: Sempre recriar quando servicos mudar (para detectar novos serviços temporários)
+    // Não usar hasInitialized mais, deixar o useMemo controlar baseado nas dependências
+    
+    // Se não temos serviços ainda, retornar array vazio (não undefined para evitar erro de Handle)
+    if (servicos.length === 0) {
+      return [];
+    }
+    
+    // 🔍 LOG ANÁLISE: Criação de nodes
+    console.group('🎨 [BOARD] Criando Nodes do ReactFlow');
+    console.log('📊 Boards disponíveis:', boardData.length);
+    console.log('🔧 Serviços a processar:', servicos.length);
+    
+    // 🔥 NOVO: Calcular posição central do canvas para serviços novos sem board
+    const canvasCenterX = 500;
+    const canvasCenterY = 200;
+    
+    // 🔍 DEBUG: Verificar tipos de boards recebidos
+    const boardTypes = boardData.reduce((acc: any, b: any) => {
+      const tipo = b.board_tipo || b.board_entidade; // 🔥 Usar board_tipo como prioridade
+      acc[tipo] = (acc[tipo] || 0) + 1;
+      return acc;
+    }, {});
+    console.log('📋 Tipos de boards (por board_tipo):', boardTypes);
+    console.table(boardData.map((b: any) => ({
+      tipo: b.board_tipo || b.board_entidade,
+      entidade: b.board_entidade,
+      titulo: b.proj_servico_titulo || '(sem titulo)',
+      entidade_id: b.board_entidade_id?.substring(0, 12) + '...',
+      node_id: b.board_node_id?.substring(0, 12) + '...',
+      pos_x: b.board_position_x,
+      pos_y: b.board_position_y,
+    })));
+    
+    // 🔥 Primeiro: Criar nodes para todos os boards existentes
+    const allNodes: Node[] = boardData.map((board: any, index: number) => {
+      const position = {
+        x: Number(board.board_position_x) || (250 + index * 350), 
+        y: Number(board.board_position_y) || 150
+      };
+      
+      const nodeId = board.board_node_id || `node-${index}`;
+      
+      // 🔥 USAR board_tipo ao invés de board_entidade!
+      const boardTipo = board.board_tipo || board.board_entidade;
+      
+      // Determinar os dados baseado no tipo de entidade
+      let nodeData: any = {
+        id: nodeId,
+        boardType: boardTipo, // 🔥 CORRIGIDO: Usar board_tipo
+        onServiceClick: () => {},
+        onDelete: onServiceDelete,
+      };
+      
+      if (boardTipo === 'servico') {
+        // Buscar dados do serviço
+        const servico = servicos.find(s => s.id === board.board_entidade_id);
+        if (servico) {
+          nodeData = {
+            ...nodeData,
+            ...servico,
+            onServiceClick,
+            isSelected: selectedServiceId === servico.id, // 🔥 NOVO: Marcar como selecionado
+          };
+          console.log(`✅ Serviço ${servico.nome}: node_id=${nodeId.substring(0,12)}... pos=(${position.x},${position.y})`);
+        } else {
+          console.warn(`⚠️  Serviço não encontrado para board_entidade_id: ${board.board_entidade_id}`);
+        }
+      } else if (boardTipo === 'orcamento') {
+        nodeData = {
+          ...nodeData,
+          nome: 'Início',
+          status: 'concluida',
+          isSystemNode: true,
+        };
+        console.log(`✅ Início (Orçamento): node_id=${nodeId.substring(0,12)}... pos=(${position.x},${position.y})`);
+      } else if (boardTipo === 'entrega') {
+        nodeData = {
+          ...nodeData,
+          nome: 'Fim',
+          status: 'planejada',
+          isSystemNode: true,
+        };
+        console.log(`✅ Fim (Entrega): node_id=${nodeId.substring(0,12)}... pos=(${position.x},${position.y})`);
+      }
+      
+      // Configurar handles baseado no tipo
+      const nodeConfig: any = {
+        id: nodeId,
+        type: 'serviceNode',
+        position,
+        data: nodeData,
+        // 🔥 TODOS os nodes têm ambas posições de handle (para conexões)
+        sourcePosition: Position.Right,
+        targetPosition: Position.Left,
+      };
+      
+      return nodeConfig;
+    });
+    
+    // 🔥 NOVO: Adicionar nodes para serviços sem board (temporários)
+    // ✅ IMPORTANTE: Excluir boards de sistema (orcamento/entrega) - eles não são serviços!
+    const servicosSemBoard = servicos.filter(servico => 
+      !boardData.some(board => 
+        board.board_entidade_id === servico.id && 
+        (board.board_tipo === 'servico' || board.board_entidade === 'servico')
+      )
+    );
+    
+    if (servicosSemBoard.length > 0) {
+      console.log(`🆕 Criando nodes temporários para ${servicosSemBoard.length} serviço(s) sem board`);
+      
+      servicosSemBoard.forEach((servico, index) => {
+        const tempNodeId = servico.id;
+        
+        // Validação: garantir que tempNodeId existe e é string
+        if (!tempNodeId || typeof tempNodeId !== 'string') {
+          console.warn('⚠️  Serviço sem ID válido, pulando...', servico);
+          return;
+        }
+        
+        // Posição: centro do canvas com offset vertical para cada novo
+        const position = {
+          x: canvasCenterX,
+          y: canvasCenterY + (index * 120), // Espaçamento vertical
+        };
+        
+        const nodeData = {
+          ...servico,
+          boardType: 'servico',
+          onServiceClick,
+          onDelete: onServiceDelete,
+          isSelected: selectedServiceId === servico.id,
+        };
+        
+        allNodes.push({
+          id: tempNodeId,
+          type: 'serviceNode',
+          position,
+          data: nodeData,
+          sourcePosition: Position.Right,
+          targetPosition: Position.Left,
+        });
+        
+        const displayId = tempNodeId.length > 12 ? tempNodeId.substring(0, 12) + '...' : tempNodeId;
+        console.log(`✅ Node temporário criado: ${servico.nome} (${displayId})`);
+      });
+    }
+    
+    console.groupEnd();
 
-  // Adicionar nó Orçamento Aprovado (início)
-  const startNode: Node = {
-    id: 'start-node',
-    type: 'serviceNode',
-    position: { x: 50, y: 150 },
-    data: {
-      id: 'start-node',
-      nome: 'Orçamento Aprovado',
-      status: 'concluida',
-      progresso_percentual: 100,
-      tarefas: [],
-      isStartNode: true,
-      onServiceClick: () => {},
-      onDelete: () => {},
-    },
-    sourcePosition: Position.Right,
-  };
-
-  // Adicionar nó Entrega Aprovada (fim)
-  const endNode: Node = {
-    id: 'end-node',
-    type: 'serviceNode',
-    position: { x: 250 + servicos.length * 350, y: 150 },
-    data: {
-      id: 'end-node',
-      nome: 'Entrega Aprovada',
-      status: 'planejada',
-      progresso_percentual: 0,
-      tarefas: [],
-      isEndNode: true,
-      onServiceClick: () => {},
-      onDelete: () => {},
-    },
-    targetPosition: Position.Left,
-  };
-
-  const initialNodes: Node[] = [startNode, ...serviceNodes, endNode];
-  const initialEdges: Edge[] = [];
+    return allNodes;
+  }, [servicos, boardData, onServiceClick, onServiceDelete, selectedServiceId]); // 🔥 Recriar quando seleção mudar
+  
+  // 🔥 ATUALIZADO: Criar edges iniciais baseadas em board_next (array)
+  const initialEdges = React.useMemo(() => {
+    console.group('🔗 [BOARD] Criando Edges (Conexões)');
+    const edgesArray: Edge[] = [];
+    
+    boardData.forEach((board: any) => {
+      if (!board.board_next || board.board_next.length === 0) {
+        console.log(`⏭️  Board ${board.board_tipo} sem board_next, pulando...`);
+        return;
+      }
+      
+      const sourceId = board.board_node_id;
+      
+      if (!sourceId) {
+        console.warn('⚠️  Board sem board_node_id:', board);
+        return;
+      }
+      
+      // 🔥 NOVO: board_next agora é um ARRAY (não mais CSV string!)
+      const targetNodeIds = Array.isArray(board.board_next) 
+        ? board.board_next 
+        : [];
+      
+      console.log(`📍 Board ${board.board_tipo}: ${sourceId.substring(0, 12)}... → [${targetNodeIds.map((t: string) => t.substring(0, 12) + '...').join(', ')}]`);
+      
+      targetNodeIds.forEach((targetNodeId: string) => {
+        edgesArray.push({
+          id: `${sourceId}-${targetNodeId}`,
+          source: sourceId,
+          target: targetNodeId,
+          type: 'default',
+          animated: false, // 🔥 DESATIVADO: Sem animação
+          style: { stroke: '#a855f7', strokeWidth: 3 },
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            color: '#a855f7',
+          },
+        });
+        
+        console.log(`  ✅ Edge: ${sourceId.substring(0, 12)}... → ${targetNodeId.substring(0, 12)}...`);
+      });
+    });
+    
+    console.log(`\n✅ Total de edges criadas: ${edgesArray.length}`);
+    console.groupEnd();
+    
+    return edgesArray;
+  }, [boardData]); // Recriar apenas quando boardData mudar
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
-
-  // Atualizar nodes quando servicos mudar
+  
+  // 🔥 NOVO: Atualizar nodes quando initialNodes mudar (serviços novos adicionados)
   React.useEffect(() => {
-    const serviceNodes: Node[] = servicos.map((servico, index) => ({
-      id: servico.id,
-      type: 'serviceNode',
-      position: { x: 250 + index * 350, y: 100 + (index % 2) * 200 },
-      data: {
-        ...servico,
-        onServiceClick,
-        onDelete: onServiceDelete,
-      },
-      sourcePosition: Position.Right,
-      targetPosition: Position.Left,
-    }));
+    if (initialNodes.length > 0) {
+      setNodes(initialNodes);
+      console.log('🔄 Nodes atualizados:', initialNodes.length);
+    }
+  }, [initialNodes, setNodes]);
 
-    const startNode: Node = {
-      id: 'start-node',
-      type: 'serviceNode',
-      position: { x: 50, y: 150 },
-      data: {
-        id: 'start-node',
-        nome: 'Orçamento Aprovado',
-        status: 'concluida',
-        progresso_percentual: 100,
-        tarefas: [],
-        isStartNode: true,
-        onServiceClick: () => {},
-        onDelete: () => {},
-      },
-      sourcePosition: Position.Right,
-    };
+  // Marcar que não é mais carregamento inicial após primeiro render
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      setIsInitialLoad(false);
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, []);
 
-    const endNode: Node = {
-      id: 'end-node',
-      type: 'serviceNode',
-      position: { x: 250 + servicos.length * 350, y: 150 },
-      data: {
-        id: 'end-node',
-        nome: 'Entrega Aprovada',
-        status: 'planejada',
-        progresso_percentual: 0,
-        tarefas: [],
-        isEndNode: true,
-        onServiceClick: () => {},
-        onDelete: () => {},
-      },
-      targetPosition: Position.Left,
-    };
-
-    setNodes([startNode, ...serviceNodes, endNode]);
-  }, [servicos, onServiceClick, onServiceDelete, setNodes]);
-
+  // ❌ REMOVIDO: useEffect que recriava nodes e perdia posições
+  // Agora os nodes só são criados uma vez no initialNodes
+  
   // Detectar mudanças nos nodes (posições)
   const handleNodesChange = useCallback((changes: any) => {
     onNodesChange(changes);
@@ -330,7 +506,7 @@ export default function ServiceFlowCanvas({
       const newEdge = {
         ...params,
         type: 'default', // Tipo default usa curvas bezier
-        animated: true,
+        animated: false, // 🔥 DESATIVADO: Sem animação
         style: { stroke: '#a855f7', strokeWidth: 3 },
         markerEnd: {
           type: MarkerType.ArrowClosed,
@@ -368,6 +544,13 @@ export default function ServiceFlowCanvas({
     }
   }, [nodes, edges, onSaveFlow]);
 
+  const handleCancelFlow = useCallback(() => {
+    if (onCancelFlow) {
+      onCancelFlow();
+      setHasChanges(false);
+    }
+  }, [onCancelFlow]);
+
   return (
     <div className="w-full h-[600px] bg-gray-900 rounded-lg border border-gray-700 overflow-hidden relative">
       {/* Modal de Confirmação de Exclusão de Conexão */}
@@ -399,7 +582,7 @@ export default function ServiceFlowCanvas({
         {/* Botão Cancelar Mudanças */}
         {hasChanges && (
           <button
-            onClick={() => setHasChanges(false)}
+            onClick={handleCancelFlow}
             className="flex items-center justify-center w-10 h-10 bg-red-600 hover:bg-red-700 text-white rounded-lg shadow-lg transition-all hover:scale-105"
             title="Cancelar alterações"
           >
@@ -444,13 +627,16 @@ export default function ServiceFlowCanvas({
         onConnect={onConnect}
         onEdgeClick={onEdgeClick}
         nodeTypes={nodeTypes}
-        fitView
         className="bg-gray-900 react-flow-dark"
         onMoveStart={handleMoveStart}
         onMoveEnd={handleMoveEnd}
         edgesUpdatable={true}
         edgesFocusable={true}
+        nodesDraggable={true}
+        nodesConnectable={true}
+        elementsSelectable={true}
       >
+        <FlowContent initialLoad={isInitialLoad} />
         <Background color="#374151" gap={16} />
         <Controls />
         {showMiniMap && (

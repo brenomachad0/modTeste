@@ -9,7 +9,9 @@ import {
   Calendar, AlertTriangle, ArrowLeft, ShoppingCart, Lightbulb, Megaphone
 } from 'lucide-react';
 import LottieIcon from './LottieIcon';
+import ProjectTabs from './ProjectTabs';
 import { mockFornecedores, mockBeneficiarios, type Fornecedor, type Beneficiario } from '../../data/mockData';
+import { mandrillApi } from '../../lib/mandrill-api';
 
 // Tipos
 type Status = 'planejada' | 'proxima' | 'executando' | 'pausada' | 'atrasada' | 'concluida';
@@ -97,6 +99,25 @@ interface Projeto {
   valor_total: number;
   prazo_dias: number;
   entregas?: Entrega[];
+  // 🔥 Timeline do projeto - APENAS MENSAGENS
+  timeline?: Array<{
+    id: string;
+    type: 'message';
+    action: string;
+    title: string;
+    content: string;
+    created_at: string;
+    created_ago?: string;
+    created_pessoa?: {
+      pessoa_id: string;
+      pessoa_nome: string;
+      pessoa_avatar?: string | null;
+      pessoa_tipo: string;
+    };
+    visible: boolean;
+    has_mention?: boolean;
+    files?: any[];
+  }>;
 }
 
 interface ProjectDetailProps {
@@ -109,6 +130,7 @@ interface ProjectDetailProps {
   onCompleteTask?: (task: Tarefa) => void;
   onBackToList: () => void;
   onDeliveryClick: (delivery: Entrega) => void;
+  onRefresh?: () => void; // Callback para recarregar dados
 }
 
 // Componente de Item de Entrega Expandido com Serviços
@@ -466,7 +488,8 @@ const PurchaseModal: React.FC<{
   isOpen: boolean;
   onClose: () => void;
   project: Projeto;
-}> = ({ isOpen, onClose, project }) => {
+  onSuccess?: () => void;
+}> = ({ isOpen, onClose, project, onSuccess }) => {
   const [selectedBeneficiario, setSelectedBeneficiario] = useState<string>('');
   const [novoBeneficiario, setNovoBeneficiario] = useState({
     nome: '',
@@ -490,6 +513,8 @@ const PurchaseModal: React.FC<{
   const [tipoComprovante, setTipoComprovante] = useState<'nota_fiscal' | 'cupom_fiscal'>('nota_fiscal');
   const [chavePix, setChavePix] = useState<string>('');
   const [tipoChavePix, setTipoChavePix] = useState<'cpf' | 'cnpj' | 'email' | 'telefone' | 'aleatoria'>('cpf');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const formatCurrency = (value: string) => {
     const numericValue = value.replace(/[^\d]/g, '');
@@ -511,24 +536,118 @@ const PurchaseModal: React.FC<{
     setComprovante(file);
   };
 
-  const handleSubmit = () => {
-    const compraData = {
-      beneficiario: isNewBeneficiario ? novoBeneficiario : selectedBeneficiario,
-      valor: parseFloat(valor.replace(/[^\d,]/g, '').replace(',', '.')),
-      dataPagamento,
-      formaPagamento,
-      pixCopiaCola: formaPagamento === 'pix_copia_cola' ? pixCopiaCola : undefined,
-      chavePix: formaPagamento === 'pix_chave' ? (isNewBeneficiario ? novoBeneficiario.chavePix : selectedBeneficiarioData?.chavePix || chavePix) : undefined,
-      tipoChavePix: formaPagamento === 'pix_chave' ? (isNewBeneficiario ? novoBeneficiario.tipoChavePix : selectedBeneficiarioData?.tipoChavePix || tipoChavePix) : undefined,
-      linhaDigitavel: formaPagamento === 'boleto' ? linhaDigitavel : undefined,
-      descricao,
-      comprovante: comprovante?.name,
-      tipoComprovante
-    };
-    
-    console.log('Dados da compra:', compraData);
-    // Aqui você pode enviar os dados para a API
-    onClose();
+  const handleSubmit = async () => {
+    if (!valor || !dataPagamento || !descricao) {
+      setError('Preencha todos os campos obrigatórios');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setError(null);
+
+    try {
+      // Determinar beneficiário nome
+      const beneficiarioNome = isNewBeneficiario 
+        ? novoBeneficiario.nome 
+        : (mockBeneficiarios.find(b => b.id === selectedBeneficiario)?.nome || '');
+
+      // Determinar meio de pagamento ID (mapear string para ID)
+      const meiosPagamento: Record<string, string> = {
+        'pix_chave': 'pix',
+        'pix_copia_cola': 'pix',
+        'boleto': 'boleto',
+      };
+
+      // Converter valor de string formatada para número
+      const valorNumerico = parseFloat(valor.replace(/[^\d,]/g, '').replace(',', '.'));
+
+      // Preparar PIX
+      let pixChaveValue = '';
+      let pixTipoValue: 'cpf' | 'cnpj' | 'email' | 'telefone' | 'aleatoria' | undefined = undefined;
+      let pixCopiaColaValue = '';
+
+      if (formaPagamento === 'pix_chave') {
+        pixChaveValue = isNewBeneficiario 
+          ? novoBeneficiario.chavePix 
+          : selectedBeneficiarioData?.chavePix || chavePix;
+        pixTipoValue = isNewBeneficiario 
+          ? novoBeneficiario.tipoChavePix 
+          : selectedBeneficiarioData?.tipoChavePix || tipoChavePix;
+      } else if (formaPagamento === 'pix_copia_cola') {
+        pixCopiaColaValue = pixCopiaCola;
+      }
+
+      const payload: any = {
+        compra_beneficiario_nome: beneficiarioNome,
+        compra_data_pagamento: dataPagamento,
+        compra_valor: valorNumerico,
+        compra_meio_pagamento: meiosPagamento[formaPagamento] || 'pix',
+        compra_descricao: descricao,
+        compra_demanda_id: project.id,
+        compra_demanda_tipo: project.demanda_tipo || '',
+        compra_demanda_codigo: project.demanda_codigo.toString(),
+      };
+
+      // Adicionar campos opcionais apenas se tiverem valor
+      if (pixCopiaColaValue) {
+        payload.compra_pix = pixCopiaColaValue;
+      }
+      if (pixChaveValue) {
+        payload.compra_pix_chave = pixChaveValue;
+      }
+      if (pixTipoValue) {
+        payload.compra_pix_tipo = pixTipoValue;
+      }
+
+      console.log('📤 Enviando compra para API:', {
+        ...payload,
+        compra_valor: `R$ ${valorNumerico.toFixed(2)}`,
+      });
+
+      await mandrillApi.criarCompra(payload);
+
+      console.log('✅ Compra criada com sucesso!');
+
+      resetForm();
+      onClose();
+
+      // Callback para atualizar lista
+      if (onSuccess) {
+        onSuccess();
+      }
+    } catch (err: any) {
+      console.error('❌ Erro ao criar compra:', err);
+      setError(err.response?.data?.message || 'Erro ao criar compra. Tente novamente.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const resetForm = () => {
+    setSelectedBeneficiario('');
+    setNovoBeneficiario({
+      nome: '',
+      cpfCnpj: '',
+      email: '',
+      telefone: '',
+      banco: '',
+      agencia: '',
+      conta: '',
+      chavePix: '',
+      tipoChavePix: 'cpf'
+    });
+    setIsNewBeneficiario(false);
+    setValor('');
+    setDataPagamento('');
+    setFormaPagamento('pix_chave');
+    setPixCopiaCola('');
+    setLinhaDigitavel('');
+    setDescricao('');
+    setComprovante(null);
+    setTipoComprovante('nota_fiscal');
+    setChavePix('');
+    setTipoChavePix('cpf');
+    setError(null);
   };
 
   const resetNovoBeneficiario = () => {
@@ -907,26 +1026,48 @@ const PurchaseModal: React.FC<{
           </div>
         </div>
 
+        {/* Mensagem de erro */}
+        {error && (
+          <div className="px-6 pb-4">
+            <div className="p-3 bg-red-500/10 border border-red-500/50 rounded-lg flex items-center gap-2 text-sm text-red-400">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              <span>{error}</span>
+            </div>
+          </div>
+        )}
+
         {/* Footer */}
         <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-700 bg-gray-800/50">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors"
+            disabled={isSubmitting}
+            className="px-4 py-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Cancelar
           </button>
           <button
             onClick={handleSubmit}
             disabled={
+              isSubmitting ||
               (!selectedBeneficiario && !isNewBeneficiario) || 
               !valor || 
               !dataPagamento ||
+              !descricao ||
               (isNewBeneficiario && (!novoBeneficiario.nome || !novoBeneficiario.cpfCnpj))
             }
             className="px-6 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center gap-2"
           >
-            <ShoppingCart className="w-4 h-4" />
-            Realizar Compra
+            {isSubmitting ? (
+              <>
+                <RefreshCw className="w-4 h-4 animate-spin" />
+                Processando...
+              </>
+            ) : (
+              <>
+                <ShoppingCart className="w-4 h-4" />
+                Realizar Compra
+              </>
+            )}
           </button>
         </div>
       </div>
@@ -939,20 +1080,29 @@ const InsumoModal: React.FC<{
   isOpen: boolean;
   onClose: () => void;
   project: Projeto;
-}> = ({ isOpen, onClose, project }) => {
-  const [tipoInsumo, setTipoInsumo] = useState<'roteiro' | 'arte' | 'storyboard' | 'locucao' | 'audio' | 'trilha' | 'outros'>('roteiro');
+  onSuccess?: () => void;
+}> = ({ isOpen, onClose, project, onSuccess }) => {
+  const [tipoInsumo, setTipoInsumo] = useState<string>('roteiro');
   const [nomePersonalizado, setNomePersonalizado] = useState<string>('');
   const [entregaSelecionada, setEntregaSelecionada] = useState<string>('');
-  const [observacoes, setObservacoes] = useState<string>('');
   const [arquivo, setArquivo] = useState<File | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
+  // Tipos permitidos pela API
   const tiposInsumo = [
     { value: 'roteiro', label: 'Roteiro' },
     { value: 'arte', label: 'Arte' },
     { value: 'storyboard', label: 'Storyboard' },
-    { value: 'locucao', label: 'Locução' },
     { value: 'audio', label: 'Áudio' },
-    { value: 'trilha', label: 'Trilha' },
+    { value: 'referencia', label: 'Referência' },
+    { value: 'branding', label: 'Branding' },
+    { value: 'producao', label: 'Produção' },
+    { value: 'edicao', label: 'Edição' },
+    { value: 'animacao', label: 'Animação' },
+    { value: 'fotografia', label: 'Fotografia' },
+    { value: 'ilustracao', label: 'Ilustração' },
+    { value: 'motion', label: 'Motion' },
     { value: 'outros', label: 'Outros' }
   ];
 
@@ -961,27 +1111,71 @@ const InsumoModal: React.FC<{
     setArquivo(file);
   };
 
-  const handleSubmit = () => {
-    const insumoData = {
-      tipo: tipoInsumo === 'outros' ? nomePersonalizado : tipoInsumo,
-      entrega: entregaSelecionada,
-      observacoes,
-      arquivo: arquivo?.name,
-      dataEnvio: new Date().toISOString(),
-      projeto: project.id
-    };
-    
-    console.log('Dados do insumo:', insumoData);
-    // Aqui você pode enviar os dados para a API
-    onClose();
+  const handleSubmit = async () => {
+    if (!arquivo) {
+      setError('Selecione um arquivo para enviar');
+      return;
+    }
+
+    if (tipoInsumo === 'outros' && !nomePersonalizado.trim()) {
+      setError('Digite o nome do insumo personalizado');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setError(null);
+
+    try {
+      const uploadData: any = {
+        arquivo: arquivo,
+        venda_arquivo_origem: entregaSelecionada ? 'entrega' : 'projeto',
+        demanda_id: project.id,
+      };
+
+      // Tipo do arquivo (enum ou custom)
+      if (tipoInsumo === 'outros') {
+        uploadData.venda_arquivo_tipo_custom = nomePersonalizado.trim();
+      } else {
+        uploadData.venda_arquivo_tipo = tipoInsumo;
+      }
+
+      // ID da entrega (se selecionada)
+      if (entregaSelecionada) {
+        uploadData.entrega_id = entregaSelecionada;
+      }
+
+      console.log('📤 Fazendo upload de insumo:', {
+        nome: arquivo.name,
+        tipo: tipoInsumo === 'outros' ? nomePersonalizado : tipoInsumo,
+        origem: uploadData.venda_arquivo_origem,
+        entrega: entregaSelecionada || 'Nenhuma',
+      });
+
+      await mandrillApi.uploadArquivo(uploadData);
+
+      console.log('✅ Insumo enviado com sucesso!');
+
+      resetForm();
+      onClose();
+
+      // Callback para atualizar lista
+      if (onSuccess) {
+        onSuccess();
+      }
+    } catch (err: any) {
+      console.error('❌ Erro ao enviar insumo:', err);
+      setError(err.response?.data?.message || 'Erro ao enviar arquivo. Tente novamente.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const resetForm = () => {
     setTipoInsumo('roteiro');
     setNomePersonalizado('');
     setEntregaSelecionada('');
-    setObservacoes('');
     setArquivo(null);
+    setError(null);
   };
 
   const handleClose = () => {
@@ -1067,20 +1261,6 @@ const InsumoModal: React.FC<{
             </select>
           </div>
 
-          {/* Observações */}
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-300 mb-2">
-              Observações
-            </label>
-            <textarea
-              value={observacoes}
-              onChange={(e) => setObservacoes(e.target.value)}
-              placeholder="Adicione observações sobre o insumo..."
-              rows={4}
-              className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-            />
-          </div>
-
           {/* Upload de Arquivo */}
           <div className="mb-6">
             <label className="block text-sm font-medium text-gray-300 mb-3">
@@ -1107,25 +1287,45 @@ const InsumoModal: React.FC<{
           </div>
         </div>
 
+        {/* Mensagem de erro */}
+        {error && (
+          <div className="px-6 pb-4">
+            <div className="p-3 bg-red-500/10 border border-red-500/50 rounded-lg flex items-center gap-2 text-sm text-red-400">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              <span>{error}</span>
+            </div>
+          </div>
+        )}
+
         {/* Footer */}
         <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-700 bg-gray-800/50">
           <button
             onClick={handleClose}
-            className="px-4 py-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors"
+            disabled={isSubmitting}
+            className="px-4 py-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Cancelar
           </button>
           <button
             onClick={handleSubmit}
             disabled={
-              !entregaSelecionada || 
+              isSubmitting ||
               (tipoInsumo === 'outros' && !nomePersonalizado.trim()) ||
               !arquivo
             }
             className="px-6 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center gap-2"
           >
-            <Upload className="w-4 h-4" />
-            Enviar Insumo
+            {isSubmitting ? (
+              <>
+                <RefreshCw className="w-4 h-4 animate-spin" />
+                Enviando...
+              </>
+            ) : (
+              <>
+                <Upload className="w-4 h-4" />
+                Enviar Insumo
+              </>
+            )}
           </button>
         </div>
       </div>
@@ -1138,62 +1338,50 @@ const InformacoesModal: React.FC<{
   isOpen: boolean;
   onClose: () => void;
   project: Projeto;
-}> = ({ isOpen, onClose, project }) => {
-  const [novaInformacao, setNovaInformacao] = useState<string>('');
-  const [responsavel, setResponsavel] = useState<string>('');
+  onSuccess?: () => void;
+}> = ({ isOpen, onClose, project, onSuccess }) => {
+  const [assunto, setAssunto] = useState<string>('');
+  const [informacao, setInformacao] = useState<string>('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  // Mock do histórico de informações (em uma aplicação real, viria da API)
-  const [historicoInformacoes] = useState([
-    {
-      id: '1',
-      data: '2024-10-01T09:00:00',
-      responsavel: 'Ana Silva',
-      informacao: 'Projeto iniciado conforme cronograma estabelecido. Cliente aprovou o briefing inicial e todos os requisitos foram documentados.'
-    },
-    {
-      id: '2',
-      data: '2024-10-03T14:30:00',
-      responsavel: 'Carlos Santos',
-      informacao: 'Reunião de alinhamento realizada. Pequenos ajustes solicitados pelo cliente na abordagem criativa. Prazo mantido.'
-    },
-    {
-      id: '3',
-      data: '2024-10-05T11:15:00',
-      responsavel: 'Maria Costa',
-      informacao: 'Primeira entrega apresentada e aprovada. Cliente muito satisfeito com a direção do projeto. Próximas etapas definidas.'
+  const handleSubmit = async () => {
+    if (!assunto.trim() || !informacao.trim()) return;
+
+    setIsSubmitting(true);
+    setError(null);
+
+    try {
+      const payload = {
+        assunto: assunto.trim(),
+        informacao: informacao.trim()
+      };
+      
+      console.log('📤 Enviando informação:', payload);
+      
+      await mandrillApi.addInformacao(project.id, payload);
+      
+      console.log('✅ Informação adicionada com sucesso!');
+      
+      resetForm();
+      onClose();
+      
+      // Callback para atualizar a lista (refetch do projeto)
+      if (onSuccess) {
+        onSuccess();
+      }
+    } catch (err: any) {
+      console.error('❌ Erro ao adicionar informação:', err);
+      setError(err.response?.data?.message || 'Erro ao adicionar informação. Tente novamente.');
+    } finally {
+      setIsSubmitting(false);
     }
-  ]);
-
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return new Intl.DateTimeFormat('pt-BR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    }).format(date);
-  };
-
-  const handleSubmit = () => {
-    if (!novaInformacao.trim()) return;
-
-    const novaEntrada = {
-      id: Date.now().toString(),
-      data: new Date().toISOString(),
-      responsavel: responsavel || 'Usuário Atual',
-      informacao: novaInformacao.trim()
-    };
-    
-    console.log('Nova informação adicionada:', novaEntrada);
-    
-    // Aqui você adicionaria a informação na API
-    onClose();
   };
 
   const resetForm = () => {
-    setNovaInformacao('');
-    setResponsavel('');
+    setAssunto('');
+    setInformacao('');
+    setError(null);
   };
 
   const handleClose = () => {
@@ -1205,12 +1393,12 @@ const InformacoesModal: React.FC<{
 
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-gray-800 border border-gray-700 rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden">
+      <div className="bg-gray-800 border border-gray-700 rounded-xl shadow-2xl w-full max-w-2xl">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-700">
           <h2 className="text-xl font-bold text-white flex items-center gap-2">
             <Edit className="w-5 h-5 text-blue-400" />
-            Informações do Projeto
+            Adicionar Informação
           </h2>
           <button
             onClick={handleClose}
@@ -1221,122 +1409,76 @@ const InformacoesModal: React.FC<{
         </div>
 
         {/* Content */}
-        <div className="flex h-[calc(90vh-140px)]">
-          {/* Formulário de Nova Informação - Lado Esquerdo */}
-          <div className="w-1/2 p-6 border-r border-gray-700">
-            <h3 className="text-lg font-semibold text-white mb-4">Adicionar Informação</h3>
-            
-            {/* Responsável */}
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Responsável
-              </label>
-              <input
-                type="text"
-                value={responsavel}
-                onChange={(e) => setResponsavel(e.target.value)}
-                placeholder="Seu nome (deixe vazio para usar padrão)"
-                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
+        <div className="p-6">
+          {/* Assunto */}
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-300 mb-2">
+              Assunto <span className="text-red-400">*</span>
+            </label>
+            <input
+              type="text"
+              value={assunto}
+              onChange={(e) => setAssunto(e.target.value)}
+              placeholder="Título da informação"
+              className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              autoFocus
+            />
+          </div>
 
-            {/* Nova Informação */}
-            <div className="mb-6">
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Informação
-              </label>
-              <textarea
-                value={novaInformacao}
-                onChange={(e) => setNovaInformacao(e.target.value)}
-                placeholder="Adicione informações sobre o projeto, atualizações, observações importantes..."
-                rows={8}
-                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
-              />
-              <div className="flex justify-between items-center mt-2">
-                <span className="text-xs text-gray-400">
-                  {novaInformacao.length} caracteres
-                </span>
-                <span className="text-xs text-gray-400">
-                  {novaInformacao.trim().split(/\s+/).filter(word => word.length > 0).length} palavras
-                </span>
-              </div>
-            </div>
-
-            {/* Botões de Ação */}
-            <div className="flex gap-3">
-              <button
-                onClick={handleClose}
-                className="px-4 py-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleSubmit}
-                disabled={!novaInformacao.trim()}
-                className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center justify-center gap-2"
-              >
-                <CheckCircle className="w-4 h-4" />
-                Adicionar Informação
-              </button>
+          {/* Informação */}
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-300 mb-2">
+              Informação <span className="text-red-400">*</span>
+            </label>
+            <textarea
+              value={informacao}
+              onChange={(e) => setInformacao(e.target.value)}
+              placeholder="Descreva a informação, atualizações, observações importantes..."
+              rows={8}
+              className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+              disabled={isSubmitting}
+            />
+            <div className="flex justify-between items-center mt-2">
+              <span className="text-xs text-gray-400">
+                {informacao.length} caracteres
+              </span>
             </div>
           </div>
 
-          {/* Histórico de Informações - Lado Direito */}
-          <div className="w-1/2 p-6">
-            <h3 className="text-lg font-semibold text-white mb-4">Histórico de Informações</h3>
-            
-            <div className="space-y-4 overflow-y-auto max-h-[calc(90vh-280px)]">
-              {historicoInformacoes.reverse().map((entrada, index) => {
-                const isRecent = index === 0;
-                
-                return (
-                  <div 
-                    key={entrada.id}
-                    className={`relative pl-6 pb-4 ${
-                      index !== historicoInformacoes.length - 1 ? 'border-l-2 border-gray-600' : ''
-                    }`}
-                  >
-                    {/* Marcador da Timeline */}
-                    <div 
-                      className={`absolute left-[-5px] top-2 w-3 h-3 rounded-full border-2 border-gray-800 bg-blue-500 ${
-                        isRecent ? 'animate-pulse' : ''
-                      }`}
-                    />
-                    
-                    {/* Conteúdo da Entrada */}
-                    <div className={`bg-gray-700/50 rounded-lg p-4 ${
-                      isRecent ? 'ring-1 ring-blue-500/50' : ''
-                    }`}>
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-2">
-                          <FileText className="w-4 h-4 text-blue-400" />
-                          <span className="font-medium text-white">
-                            Nova Informação
-                          </span>
-                          {isRecent && (
-                            <span className="text-xs px-2 py-1 bg-blue-600 text-white rounded-full">
-                              Recente
-                            </span>
-                          )}
-                        </div>
-                        <span className="text-xs text-gray-400">
-                          {formatDate(entrada.data)}
-                        </span>
-                      </div>
-                      
-                      <p className="text-sm text-gray-300 mb-3 leading-relaxed">
-                        {entrada.informacao}
-                      </p>
-                      
-                      <p className="text-xs text-gray-400 flex items-center gap-1">
-                        <User className="w-3 h-3" />
-                        {entrada.responsavel}
-                      </p>
-                    </div>
-                  </div>
-                );
-              })}
+          {/* Mensagem de erro */}
+          {error && (
+            <div className="mb-4 p-3 bg-red-500/10 border border-red-500/50 rounded-lg flex items-center gap-2 text-sm text-red-400">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              <span>{error}</span>
             </div>
+          )}
+
+          {/* Botões de Ação */}
+          <div className="flex gap-3 justify-end">
+            <button
+              onClick={handleClose}
+              disabled={isSubmitting}
+              className="px-4 py-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={handleSubmit}
+              disabled={!assunto.trim() || !informacao.trim() || isSubmitting}
+              className="px-6 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center gap-2"
+            >
+              {isSubmitting ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  Enviando...
+                </>
+              ) : (
+                <>
+                  <CheckCircle className="w-4 h-4" />
+                  Adicionar
+                </>
+              )}
+            </button>
           </div>
         </div>
       </div>
@@ -1353,7 +1495,8 @@ export default function ProjectDetail({
   onViewTask,
   onCompleteTask,
   onBackToList,
-  onDeliveryClick
+  onDeliveryClick,
+  onRefresh
 }: ProjectDetailProps) {
   const [expanded, setExpanded] = useState(true);
   const [showContractingModal, setShowContractingModal] = useState(false);
@@ -1753,12 +1896,13 @@ export default function ProjectDetail({
                 <span className="text-xs text-gray-400">{tarefasInfo.concluidas}/{tarefasInfo.total}</span> • <span className="font-bold text-blue-400">{progressoTarefas.toFixed(0)}%</span>
               </span>
             </div>
-            <div className="w-full bg-gray-700 rounded-full h-2.5">
+            <div className="w-full bg-gray-700 rounded-full h-2.5 overflow-hidden">
               <div 
-                className="bg-gradient-to-r from-blue-500 to-blue-400 h-2.5 rounded-full transition-all duration-300 relative"
+                className="bg-gradient-to-r from-blue-600 via-purple-500 to-purple-400 h-2.5 rounded-full transition-all duration-500 relative shadow-lg shadow-purple-500/50"
                 style={{ width: `${progressoTarefas}%` }}
               >
-                <div className="absolute inset-0 bg-white opacity-20 rounded-full animate-pulse"></div>
+                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white to-transparent opacity-30 animate-pulse"></div>
+                <div className="absolute inset-0 bg-gradient-to-t from-purple-700/50 to-transparent"></div>
               </div>
             </div>
           </div>
@@ -1774,12 +1918,13 @@ export default function ProjectDetail({
                 <span className="text-xs text-gray-400">R$ {(custoInfo.consumido/1000).toFixed(0)}k/{(custoInfo.total/1000).toFixed(0)}k</span> • <span className="font-bold text-green-400">{consumoOrcamento.toFixed(0)}%</span>
               </span>
             </div>
-            <div className="w-full bg-gray-700 rounded-full h-2.5">
+            <div className="w-full bg-gray-700 rounded-full h-2.5 overflow-hidden">
               <div 
-                className="bg-gradient-to-r from-green-500 to-green-400 h-2.5 rounded-full transition-all duration-300 relative"
+                className="bg-gradient-to-r from-green-600 via-lime-500 to-yellow-400 h-2.5 rounded-full transition-all duration-500 relative shadow-lg shadow-lime-500/50"
                 style={{ width: `${consumoOrcamento}%` }}
               >
-                <div className="absolute inset-0 bg-white opacity-20 rounded-full animate-pulse"></div>
+                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white to-transparent opacity-30 animate-pulse"></div>
+                <div className="absolute inset-0 bg-gradient-to-t from-lime-700/50 to-transparent"></div>
               </div>
             </div>
           </div>
@@ -1795,16 +1940,21 @@ export default function ProjectDetail({
                 <span className="text-xs text-gray-400">{horasInfo.consumidas}/{horasInfo.total} H</span> • <span className="font-bold text-orange-400">{consumoPrazo.toFixed(0)}%</span>
               </span>
             </div>
-            <div className="w-full bg-gray-700 rounded-full h-2.5">
+            <div className="w-full bg-gray-700 rounded-full h-2.5 overflow-hidden">
               <div 
-                className={`h-2.5 rounded-full transition-all duration-300 relative ${
-                  consumoPrazo > 90 ? 'bg-gradient-to-r from-red-500 to-red-400' :
-                  consumoPrazo > 70 ? 'bg-gradient-to-r from-yellow-500 to-orange-400' :
-                  'bg-gradient-to-r from-orange-500 to-orange-400'
+                className={`h-2.5 rounded-full transition-all duration-500 relative ${
+                  consumoPrazo > 90 ? 'bg-gradient-to-r from-red-600 via-orange-500 to-orange-400 shadow-lg shadow-orange-500/50' :
+                  consumoPrazo > 70 ? 'bg-gradient-to-r from-orange-600 via-orange-500 to-amber-400 shadow-lg shadow-orange-500/50' :
+                  'bg-gradient-to-r from-orange-600 via-orange-500 to-amber-400 shadow-lg shadow-orange-500/50'
                 }`}
                 style={{ width: `${Math.min(consumoPrazo, 100)}%` }}
               >
-                <div className="absolute inset-0 bg-white opacity-20 rounded-full animate-pulse"></div>
+                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white to-transparent opacity-30 animate-pulse"></div>
+                <div className={`absolute inset-0 bg-gradient-to-t to-transparent ${
+                  consumoPrazo > 90 ? 'from-orange-700/50' :
+                  consumoPrazo > 70 ? 'from-orange-700/50' :
+                  'from-orange-700/50'
+                }`}></div>
               </div>
             </div>
           </div>
@@ -1813,124 +1963,15 @@ export default function ProjectDetail({
       
       {expanded && (
         <div className="p-6 pt-0">
-          {/* Linha exclusiva para os botões */}
-          <div className="flex justify-center mb-6">
-            <div className="flex items-center gap-2">
-              <button 
-                onClick={() => setShowContractingModal(true)}
-                className="flex items-center gap-2 px-3 py-1 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg transition-colors"
-              >
-                <User className="w-4 h-4" />
-                Fazer Proposta
-              </button>
-              <button 
-                onClick={() => setShowPurchaseModal(true)}
-                className="flex items-center gap-2 px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg transition-colors"
-              >
-                <ShoppingCart className="w-4 h-4" />
-                Comprar
-              </button>
-              <button 
-                onClick={() => setShowInsumoModal(true)}
-                className="flex items-center gap-2 px-3 py-1 bg-purple-600 hover:bg-purple-700 text-white text-sm rounded-lg transition-colors"
-              >
-                <Upload className="w-4 h-4" />
-                Insumo
-              </button>
-            </div>
-          </div>
-
-          {/* Timeline de Informações */}
+          {/* 🔥 Projeto Tabs (Informações, Equipe, Compras, Insumos) */}
           <div className="mb-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-white flex items-center gap-2">
-                <FileText className="w-5 h-5 text-blue-400" />
-                Informações do Projeto
-              </h3>
-              <button 
-                onClick={() => setShowInformacoesModal(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg transition-colors shadow-lg"
-              >
-                <Plus className="w-4 h-4" />
-                Adicionar
-              </button>
-            </div>
-
-            {/* Timeline Livre */}
-            <div className="space-y-4">
-              {historicoInformacoes.slice().reverse().map((entrada, index) => {
-                const isRecent = index === 0;
-                
-                return (
-                  <div 
-                    key={entrada.id}
-                    className={`relative pl-6 ${
-                      index !== historicoInformacoes.length - 1 ? 'pb-4' : 'pb-2'
-                    }`}
-                  >
-                    {/* Linha conectora */}
-                    {index !== historicoInformacoes.length - 1 && (
-                      <div className="absolute left-[11px] top-8 bottom-0 w-0.5 bg-gradient-to-b from-blue-500 to-gray-600" />
-                    )}
-                    
-                    {/* Marcador da Timeline */}
-                    <div 
-                      className={`absolute left-[6px] top-2 w-3 h-3 rounded-full border-2 border-gray-900 bg-blue-500 shadow-lg ${
-                        isRecent ? 'animate-pulse ring-2 ring-blue-400/30' : ''
-                      }`}
-                    />
-                    
-                    {/* Card da Entrada */}
-                    <div className={`bg-gray-800 border rounded-lg p-4 shadow-lg transition-all hover:shadow-xl ${
-                      isRecent 
-                        ? 'border-blue-500/50 bg-gradient-to-r from-blue-900/20 to-gray-800' 
-                        : 'border-gray-700 hover:border-gray-600'
-                    }`}>
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-2">
-                          <User className="w-4 h-4 text-blue-400" />
-                          <span className="font-medium text-white">
-                            {entrada.responsavel}
-                          </span>
-                          {isRecent && (
-                            <span className="px-2 py-1 bg-blue-600 text-white text-xs rounded-full font-medium">
-                              Mais Recente
-                            </span>
-                          )}
-                        </div>
-                        <span className="text-sm text-gray-400 bg-gray-700 px-2 py-1 rounded">
-                          {formatDateShort(entrada.data)}
-                        </span>
-                      </div>
-                      
-                      <p className="text-gray-300 leading-relaxed">
-                        {entrada.informacao}
-                      </p>
-                    </div>
-                  </div>
-                );
-              })}
-              
-              {/* Estado vazio */}
-              {historicoInformacoes.length === 0 && (
-                <div className="text-center py-12">
-                  <div className="w-16 h-16 mx-auto mb-4 bg-gray-800 rounded-full flex items-center justify-center">
-                    <FileText className="w-8 h-8 text-gray-500" />
-                  </div>
-                  <h4 className="text-white font-medium mb-2">Nenhuma informação ainda</h4>
-                  <p className="text-gray-400 text-sm mb-4">
-                    Comece adicionando informações importantes sobre este projeto
-                  </p>
-                  <button 
-                    onClick={() => setShowInformacoesModal(true)}
-                    className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg transition-colors"
-                  >
-                    <Plus className="w-4 h-4" />
-                    Adicionar Primeira Informação
-                  </button>
-                </div>
-              )}
-            </div>
+            <ProjectTabs 
+              project={project}
+              onAddInfo={() => setShowInformacoesModal(true)}
+              onAddTeam={() => setShowContractingModal(true)}
+              onAddPurchase={() => setShowPurchaseModal(true)}
+              onAddFile={() => setShowInsumoModal(true)}
+            />
           </div>
 
           {/* Seção Entregas do Projeto */}
@@ -1966,6 +2007,12 @@ export default function ProjectDetail({
         isOpen={showPurchaseModal}
         onClose={() => setShowPurchaseModal(false)}
         project={project}
+        onSuccess={() => {
+          // Recarrega os dados do projeto após criar compra
+          if (onRefresh) {
+            onRefresh();
+          }
+        }}
       />
 
       {/* Modal de Insumo */}
@@ -1973,6 +2020,12 @@ export default function ProjectDetail({
         isOpen={showInsumoModal}
         onClose={() => setShowInsumoModal(false)}
         project={project}
+        onSuccess={() => {
+          // Recarrega os dados do projeto após enviar insumo
+          if (onRefresh) {
+            onRefresh();
+          }
+        }}
       />
 
       {/* Modal de Informações */}
@@ -1980,6 +2033,12 @@ export default function ProjectDetail({
         isOpen={showInformacoesModal}
         onClose={() => setShowInformacoesModal(false)}
         project={project}
+        onSuccess={() => {
+          // Recarrega os dados do projeto após adicionar informação
+          if (onRefresh) {
+            onRefresh();
+          }
+        }}
       />
     </div>
     </div>
