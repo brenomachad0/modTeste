@@ -10,6 +10,8 @@ import {
 } from 'lucide-react';
 import LottieIcon from './LottieIcon';
 import ProjectTabs from './ProjectTabs';
+import EntregaFlowCanvas from './EntregaFlowCanvas';
+import { useIsDesktop } from '../hooks/useMediaQuery';
 import { mockFornecedores, mockBeneficiarios, type Fornecedor, type Beneficiario } from '../../data/mockData';
 import { mandrillApi } from '../../lib/mandrill-api';
 
@@ -1503,6 +1505,11 @@ export default function ProjectDetail({
   const [showPurchaseModal, setShowPurchaseModal] = useState(false);
   const [showInsumoModal, setShowInsumoModal] = useState(false);
   const [showInformacoesModal, setShowInformacoesModal] = useState(false);
+  
+  // Estados para o fluxo de entregas
+  const isDesktop = useIsDesktop();
+  const [entregaBoardData, setEntregaBoardData] = useState<any[]>([]);
+  const [isSavingFlow, setIsSavingFlow] = useState(false);
 
   // Mock do histórico de informações para exibir na timeline
   const historicoInformacoes = [
@@ -1707,6 +1714,53 @@ export default function ProjectDetail({
   const tarefasInfo = calcularTotalTarefas();
   const custoInfo = calcularCustoConsumido();
   const horasInfo = calcularHorasConsumidas();
+
+  // Handlers para o fluxo de entregas
+  const handleSaveEntregaFlow = async (nodes: any[], edges: any[]) => {
+    setIsSavingFlow(true);
+    
+    try {
+      // Transformar nodes e edges para formato do board_data
+      const boardDataToSave = nodes.map((node: any) => ({
+        board_node_id: node.id,
+        board_entidade: 'entrega',
+        board_entidade_id: node.data.id,
+        board_tipo: 'entrega',
+        board_position_x: node.position.x,
+        board_position_y: node.position.y,
+        board_next: edges
+          .filter((edge: any) => edge.source === node.id)
+          .map((edge: any) => edge.target),
+      }));
+      
+      // TODO: Salvar no backend via API
+      console.log('💾 Salvando fluxo de entregas:', boardDataToSave);
+      
+      // Simular delay de API
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      setEntregaBoardData(boardDataToSave);
+      console.log('✅ Fluxo de entregas salvo com sucesso!');
+    } catch (error) {
+      console.error('❌ Erro ao salvar fluxo de entregas:', error);
+      alert('Erro ao salvar fluxo de entregas. Tente novamente.');
+    } finally {
+      setIsSavingFlow(false);
+    }
+  };
+
+  const handleCancelEntregaFlow = () => {
+    console.log('❌ Cancelando edição do fluxo de entregas');
+    // O componente EntregaFlowCanvas já cuida de restaurar o estado original
+  };
+
+  const handleEntregaClick = (entregaId: string) => {
+    // Navegar para a página de detalhes da entrega
+    const entrega = project.entregas?.find((e: any) => e.id === entregaId);
+    if (entrega) {
+      onDeliveryClick(entrega);
+    }
+  };
 
   return (
     <div className="min-h-full p-6">
@@ -1976,22 +2030,37 @@ export default function ProjectDetail({
 
           {/* Seção Entregas do Projeto */}
           <div className="mb-4">
-            <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Entregas do Projeto</h3>
+            <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">
+              {isDesktop ? 'Fluxo de Entregas' : 'Entregas do Projeto'}
+            </h3>
           </div>
           
-          {/* Lista de Entregas - versão reduzida ou completa - Margem mínima */}
-          <div className="max-h-[600px] overflow-y-auto">
-            {/* Versão reduzida para lista de entregas */}
-            <div className="space-y-2">
-              {project.entregas?.map(delivery => (
-                <DeliveryListItem
-                  key={delivery.id}
-                  delivery={delivery}
-                  onClick={onDeliveryClick}
-                />
-              ))}
+          {/* Desktop: Fluxo ReactFlow | Mobile: Lista */}
+          {isDesktop ? (
+            <div className="mb-4">
+              <EntregaFlowCanvas
+                entregas={project.entregas || []}
+                boardData={entregaBoardData}
+                onEntregaClick={handleEntregaClick}
+                onSaveFlow={handleSaveEntregaFlow}
+                onCancelFlow={handleCancelEntregaFlow}
+                isSaving={isSavingFlow}
+                projetoId={project.id}
+              />
             </div>
-          </div>
+          ) : (
+            <div className="max-h-[600px] overflow-y-auto">
+              <div className="space-y-2">
+                {project.entregas?.map(delivery => (
+                  <DeliveryListItem
+                    key={delivery.id}
+                    delivery={delivery}
+                    onClick={onDeliveryClick}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
