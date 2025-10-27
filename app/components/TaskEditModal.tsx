@@ -3,8 +3,19 @@
 import { useState, useEffect } from 'react';
 import { X, Save, Calendar, Clock, User, AlertCircle, FileText } from 'lucide-react';
 import SaveTaskModal from './SaveTaskModal';
+import DurationInput from './DurationInput';
+import { mandrillApi } from '@/lib/mandrill-api';
 
 type Status = 'planejada' | 'proxima' | 'executando' | 'pausada' | 'atrasada' | 'concluida';
+
+interface Setor {
+  setor_id: string;
+  setor_nome: string;
+  setor_slug: string;
+  setor_parent?: string;
+  setor_pai?: Setor;
+  setores_filhos?: Setor[];
+}
 
 interface Tarefa {
   id: string;
@@ -12,6 +23,7 @@ interface Tarefa {
   status: Status;
   ordem?: number;
   setor: string;
+  setor_id?: string;
   responsavel_usuario?: string | null;
   responsavel_nome?: string | null;
   responsavel_tipo?: string;
@@ -19,19 +31,27 @@ interface Tarefa {
   duracao_segundos?: number;
   mandrill_coins: number;
   instrucao?: string;
+  descricao?: string;
+  observacao?: string;
   templates?: any[];
   data_inicio?: string;
   data_fim?: string;
   tempo_execucao?: number;
   resultado?: any;
+  execucao_template_id?: string; // ID do template associado
 }
 
 interface TaskEditModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSave: (tarefa: Tarefa) => void;
-  onSaveAsTemplate?: (tarefa: Tarefa) => void;
+  onDelete?: (tarefaId: string) => void;
+  onSaveAsTemplate?: (tarefa: Tarefa) => Promise<void>;
+  onSuccess?: (message: string) => void;
+  onError?: (message: string) => void;
   tarefa: Tarefa;
+  servicoId?: string;
+  demandaId?: string;
 }
 
 // Funções para converter prazo entre horas e formato DD HH:mm:ss
@@ -65,37 +85,212 @@ const parsePrazoString = (str: string): number => {
   return 0;
 };
 
-export default function TaskEditModal({ isOpen, onClose, onSave, onSaveAsTemplate, tarefa }: TaskEditModalProps) {
+export default function TaskEditModal({ isOpen, onClose, onSave, onDelete, onSaveAsTemplate, onSuccess, onError, tarefa, servicoId, demandaId }: TaskEditModalProps) {
   const [editedTask, setEditedTask] = useState<Tarefa>(tarefa);
   const [showSaveModal, setShowSaveModal] = useState(false);
+  const [setores, setSetores] = useState<Setor[]>([]);
+  const [loadingSetores, setLoadingSetores] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  // Verificar se a tarefa tem template associado
+  const hasTemplate = !!editedTask.execucao_template_id;
 
   useEffect(() => {
     setEditedTask(tarefa);
   }, [tarefa]);
 
+  // Carregar setores quando o modal abrir
+  useEffect(() => {
+    if (isOpen) {
+      carregarSetores();
+    }
+  }, [isOpen]);
+
+  const carregarSetores = async () => {
+    try {
+      setLoadingSetores(true);
+      const data = await mandrillApi.listarSetores();
+      setSetores(data);
+    } catch (error) {
+      console.error('Erro ao carregar setores:', error);
+    } finally {
+      setLoadingSetores(false);
+    }
+  };
+
+  // Renderizar hierarquia de setores
+  const renderSetorOption = (setor: Setor, level: number = 0): React.ReactNode[] => {
+    const options: React.ReactNode[] = [];
+    const prefix = '  '.repeat(level);
+    
+    options.push(
+      <option key={setor.setor_id} value={setor.setor_id}>
+        {prefix}{setor.setor_nome}
+      </option>
+    );
+
+    if (setor.setores_filhos && setor.setores_filhos.length > 0) {
+      setor.setores_filhos.forEach(filho => {
+        options.push(...renderSetorOption(filho, level + 1));
+      });
+    }
+
+    return options;
+  };
+
   if (!isOpen) return null;
 
   const handleSaveClick = () => {
     // Validação básica
-    if (!editedTask.nome.trim() || !editedTask.setor.trim() || editedTask.prazo_horas <= 0) {
-      alert('Por favor, preencha todos os campos obrigatórios');
+    if (!editedTask.nome.trim()) {
+      alert('O título da tarefa é obrigatório!');
+      return;
+    }
+    if (editedTask.prazo_horas <= 0) {
+      alert('O prazo deve ser maior que zero!');
       return;
     }
     setShowSaveModal(true);
   };
 
-  const handleSaveOnly = () => {
-    onSave(editedTask);
-    onClose();
+  const handleSaveOnly = async () => {
+    try {
+      setSaving(true);
+      
+      // APENAS atualiza o estado local via callback
+      // NÃO faz requisição à API (isso será feito ao finalizar edição)
+      onSave(editedTask);
+      onClose();
+    } catch (error) {
+      console.error('Erro ao salvar tarefa:', error);
+      alert('Erro ao salvar tarefa. Verifique o console para mais detalhes.');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleSaveAsTemplate = () => {
-    if (onSaveAsTemplate) {
-      onSaveAsTemplate(editedTask);
-    } else {
+  const handleSaveAsTemplate = async () => {
+    try {
+      setSaving(true);
+      
+      // Se tem callback customizado de template, usa ele
+      if (onSaveAsTemplate) {
+        await onSaveAsTemplate(editedTask);
+        onClose();
+        return;
+      }
+      
+      // Cria APENAS o template (não cria a tarefa)
+      const prazoMinutos = editedTask.prazo_horas;
+      const prazoWarning = Math.floor(prazoMinutos / 2);
+      const prazoDanger = Math.floor(prazoMinutos / 4);
+
+      const payloadTemplate = {
+        template_titulo: editedTask.nome,
+        template_observacoes: editedTask.descricao || editedTask.observacao || '',
+        template_deadline: prazoMinutos,
+        template_warning: prazoWarning,
+        template_danger: prazoDanger,
+        template_coins: editedTask.mandrill_coins || 1,
+      };
+
+      const resultado = await mandrillApi.criarTemplate(payloadTemplate);
+      console.log('✅ Template criado:', resultado);
+      
+      // Atualiza o estado local (tarefa continua no cache)
       onSave(editedTask);
+      
+      // Notifica sucesso
+      if (onSuccess) {
+        onSuccess('Template criado com sucesso! A tarefa foi mantida na lista para ser salva ao finalizar a edição.');
+      }
+      
+      onClose();
+    } catch (error) {
+      console.error('Erro ao criar template:', error);
+      if (onError) {
+        onError('Erro ao criar template. Verifique o console para mais detalhes.');
+      }
+    } finally {
+      setSaving(false);
     }
-    onClose();
+  };
+
+  const handleUpdateTemplate = async () => {
+    try {
+      setSaving(true);
+      
+      const prazoMinutos = editedTask.prazo_horas;
+      const prazoWarning = Math.floor(prazoMinutos / 2);
+      const prazoDanger = Math.floor(prazoMinutos / 4);
+
+      const payloadTemplate = {
+        template_titulo: editedTask.nome,
+        template_observacoes: editedTask.descricao || editedTask.observacao || '',
+        template_deadline: prazoMinutos,
+        template_warning: prazoWarning,
+        template_danger: prazoDanger,
+        template_coins: editedTask.mandrill_coins || 1,
+      };
+
+      const templateId = parseInt(editedTask.execucao_template_id || '0');
+      await mandrillApi.atualizarTemplate(templateId, payloadTemplate);
+      console.log('✅ Template atualizado');
+      
+      // Atualiza a tarefa também
+      onSave(editedTask);
+      
+      // Notifica sucesso
+      if (onSuccess) {
+        onSuccess('Template atualizado com sucesso!');
+      }
+      
+      onClose();
+    } catch (error) {
+      console.error('Erro ao atualizar template:', error);
+      if (onError) {
+        onError('Erro ao atualizar template. Verifique o console para mais detalhes.');
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!onDelete) {
+      alert('Função de deletar não disponível');
+      return;
+    }
+
+    try {
+      setDeleting(true);
+      
+      // Se não é uma tarefa nova (ID começa com 'task-'), chama a API
+      if (!editedTask.id.startsWith('task-')) {
+        await mandrillApi.deletarTarefa(editedTask.id); // ID pode ser número ou UUID
+        console.log('✅ Tarefa deletada da API');
+      }
+      
+      // Notifica o componente pai para remover do cache
+      onDelete(editedTask.id);
+      
+      // Notifica sucesso
+      if (onSuccess) {
+        onSuccess('Tarefa excluída com sucesso!');
+      }
+      
+      onClose();
+    } catch (error) {
+      console.error('Erro ao deletar tarefa:', error);
+      if (onError) {
+        onError('Erro ao deletar tarefa. Verifique o console para mais detalhes.');
+      }
+    } finally {
+      setDeleting(false);
+      setShowDeleteConfirm(false);
+    }
   };
 
   const statusOptions = [
@@ -143,104 +338,73 @@ export default function TaskEditModal({ isOpen, onClose, onSave, onSaveAsTemplat
           {/* Instrução */}
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-2">
-              Instrução
+              Descrição
             </label>
             <textarea
-              value={editedTask.instrucao || ''}
-              onChange={(e) => setEditedTask({ ...editedTask, instrucao: e.target.value })}
+              value={editedTask.descricao || ''}
+              onChange={(e) => setEditedTask({ ...editedTask, descricao: e.target.value })}
               className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-purple-500 min-h-[100px]"
-              placeholder="Instruções detalhadas da tarefa"
+              placeholder="Detalhes sobre a tarefa..."
+            />
+          </div>
+
+          {/* Observações */}
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-2">
+              Observações
+            </label>
+            <textarea
+              value={editedTask.observacao || ''}
+              onChange={(e) => setEditedTask({ ...editedTask, observacao: e.target.value })}
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-purple-500 min-h-[80px]"
+              placeholder="Observações adicionais..."
             />
           </div>
           
           {/* Setor */}
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-2">
-              Setor *
+              Setor Responsável *
             </label>
-            <input
-              type="text"
-              value={editedTask.setor}
-              onChange={(e) => setEditedTask({ ...editedTask, setor: e.target.value })}
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-              placeholder="Setor responsável"
-            />
+            {loadingSetores ? (
+              <div className="text-gray-500 text-sm py-2">Carregando setores...</div>
+            ) : (
+              <select
+                value={editedTask.setor_id || ''}
+                onChange={(e) => {
+                  const setorId = e.target.value;
+                  const setorSelecionado = setores.flatMap(s => [s, ...(s.setores_filhos || [])]).find(s => s.setor_id === setorId);
+                  setEditedTask({ 
+                    ...editedTask, 
+                    setor_id: setorId,
+                    setor: setorSelecionado?.setor_nome || editedTask.setor 
+                  });
+                }}
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+              >
+                <option value="">Selecione um setor</option>
+                {setores.map(setor => renderSetorOption(setor))}
+              </select>
+            )}
+            {editedTask.setor && !editedTask.setor_id && (
+              <p className="text-xs text-gray-500 mt-1">Setor atual: {editedTask.setor}</p>
+            )}
           </div>
 
-          {/* Prazo - Dias e Horas:Minutos separados */}
+          {/* Prazo/Duração */}
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-2 flex items-center gap-2">
               <Clock className="w-4 h-4" />
-              Prazo *
+              Duração (DD HH:mm:ss) *
             </label>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs text-gray-400 mb-1">Dias</label>
-                <input
-                  type="number"
-                  value={Math.floor(editedTask.prazo_horas / 24)}
-                  onChange={(e) => {
-                    const dias = parseInt(e.target.value) || 0;
-                    const horasRestantes = editedTask.prazo_horas % 24;
-                    setEditedTask({ ...editedTask, prazo_horas: dias * 24 + horasRestantes });
-                  }}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-                  placeholder="0"
-                  min="0"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-400 mb-1">Horas:Minutos</label>
-                <input
-                  type="text"
-                  value={(() => {
-                    const totalMinutes = Math.round((editedTask.prazo_horas % 24) * 60);
-                    const hours = Math.floor(totalMinutes / 60);
-                    const minutes = totalMinutes % 60;
-                    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
-                  })()}
-                  onChange={(e) => {
-                    let value = e.target.value;
-                    
-                    // Remove tudo que não é dígito
-                    const numbers = value.replace(/\D/g, '');
-                    
-                    // Formata com os dois pontos automaticamente
-                    let formatted = '';
-                    if (numbers.length > 0) {
-                      formatted = numbers.substring(0, 2);
-                      if (numbers.length > 2) {
-                        formatted += ':' + numbers.substring(2, 4);
-                      }
-                    }
-                    
-                    // Parse para calcular
-                    const parts = formatted.split(':');
-                    const hours = parts[0] ? Math.min(parseInt(parts[0]) || 0, 23) : 0;
-                    const minutes = parts[1] ? Math.min(parseInt(parts[1]) || 0, 59) : 0;
-                    
-                    const dias = Math.floor(editedTask.prazo_horas / 24);
-                    const horasDecimal = hours + minutes / 60;
-                    setEditedTask({ ...editedTask, prazo_horas: dias * 24 + horasDecimal });
-                  }}
-                  onKeyDown={(e) => {
-                    // Permite navegação e edição
-                    if (e.key === 'Backspace' || e.key === 'Delete' || e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Tab') {
-                      return;
-                    }
-                    // Permite apenas números
-                    if (!/^\d$/.test(e.key)) {
-                      e.preventDefault();
-                    }
-                  }}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-purple-500 font-mono"
-                  placeholder="00:00"
-                />
-              </div>
-            </div>
+            <DurationInput
+              value={editedTask.prazo_horas}
+              onChange={(minutes) => setEditedTask({ ...editedTask, prazo_horas: minutes })}
+              className="bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+            />
             <p className="text-xs text-gray-500 mt-1">
-              Total: {Math.floor(editedTask.prazo_horas)}h {Math.round((editedTask.prazo_horas % 1) * 60)}min
-              ({Math.floor(editedTask.prazo_horas / 24)}d {Math.floor(editedTask.prazo_horas % 24)}h {Math.round((editedTask.prazo_horas % 1) * 60)}min)
+              Total: {Math.floor(editedTask.prazo_horas / 60)}h {Math.round(editedTask.prazo_horas % 60)}min
+              {editedTask.prazo_horas >= 1440 && ` (${Math.floor(editedTask.prazo_horas / 1440)} dias)`}
             </p>
           </div>
 
@@ -254,31 +418,84 @@ export default function TaskEditModal({ isOpen, onClose, onSave, onSaveAsTemplat
         </div>
 
         {/* Footer */}
-        <div className="sticky bottom-0 bg-gray-800 border-t border-gray-700 px-6 py-4 flex items-center justify-end gap-3">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors"
-          >
-            Cancelar
-          </button>
-          <button
-            onClick={handleSaveClick}
-            disabled={!editedTask.nome.trim()}
-            className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center gap-2"
-          >
-            <Save className="w-4 h-4" />
-            Salvar Alterações
-          </button>
+        <div className="sticky bottom-0 bg-gray-800 border-t border-gray-700 px-6 py-4 flex items-center justify-between gap-3">
+          {/* Botão de deletar à esquerda */}
+          {onDelete && (
+            <button
+              onClick={() => setShowDeleteConfirm(true)}
+              disabled={saving || deleting}
+              className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center gap-2"
+            >
+              <X className="w-4 h-4" />
+              {deleting ? 'Excluindo...' : 'Excluir'}
+            </button>
+          )}
+          
+          {/* Botões de salvar/cancelar à direita */}
+          <div className="flex items-center gap-3 ml-auto">
+            <button
+              onClick={onClose}
+              disabled={saving || deleting}
+              className="px-4 py-2 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={handleSaveClick}
+              disabled={!editedTask.nome.trim() || saving || deleting}
+              className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center gap-2"
+            >
+              <Save className="w-4 h-4" />
+              {saving ? 'Salvando...' : 'Salvar Alterações'}
+            </button>
+          </div>
         </div>
       </div>
 
       {/* Modal de confirmação de salvamento */}
       <SaveTaskModal
         isOpen={showSaveModal}
-        onClose={() => setShowSaveModal(false)}
+        onClose={() => !saving && setShowSaveModal(false)}
         onSaveOnly={handleSaveOnly}
-        onSaveAsTemplate={handleSaveAsTemplate}
+        onSaveAsTemplate={hasTemplate ? undefined : handleSaveAsTemplate}
+        onUpdateTemplate={hasTemplate ? handleUpdateTemplate : undefined}
+        hasTemplate={hasTemplate}
       />
+
+      {/* Modal de confirmação de exclusão */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[70] p-4">
+          <div className="bg-gray-900 border border-red-500/50 rounded-lg shadow-2xl max-w-md w-full">
+            <div className="bg-red-900/20 border-b border-red-500/50 px-6 py-4">
+              <h2 className="text-lg font-bold text-red-400">Confirmar Exclusão</h2>
+            </div>
+            <div className="p-6 space-y-4">
+              <p className="text-gray-300">
+                Tem certeza que deseja excluir a tarefa <strong className="text-white">"{editedTask.nome}"</strong>?
+              </p>
+              <p className="text-sm text-gray-400">
+                Esta ação não pode ser desfeita.
+              </p>
+            </div>
+            <div className="bg-gray-800 border-t border-gray-700 px-6 py-4 flex items-center justify-end gap-3">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={deleting}
+                className="px-4 py-2 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-white rounded-lg transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white rounded-lg transition-colors"
+              >
+                {deleting ? 'Excluindo...' : 'Excluir'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

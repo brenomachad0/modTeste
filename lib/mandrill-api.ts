@@ -859,6 +859,136 @@ class MandrillApiClient {
     });
     return response.data;
   }
+
+  // ========================================
+  // TAREFAS (EXECUÇÃO)
+  // ========================================
+
+  /**
+   * Cria uma nova tarefa (execução)
+   * @param payload Dados da tarefa
+   * @param criarTemplate Se true, cria também um template da tarefa
+   */
+  async criarTarefa(payload: {
+    execucao_demanda_id: string;
+    execucao_template_id?: string;
+    execucao_setor_id?: string;
+    execucao_titulo: string;
+    execucao_observacao?: string;
+    execucao_descricao?: string;
+    execucao_tipo: string;
+    execucao_tipo_id: string;
+    execucao_url?: string;
+    execucao_coins?: number;
+    execucao_ordem: number;
+    execucao_prazo_deadline: number;
+    execucao_prazo_warning?: number;
+    execucao_prazo_danger?: number;
+    execucao_sucesso?: boolean;
+    execucao_cancel_at?: string;
+    execucao_start_at?: string;
+    execucao_finish_at?: string;
+    execucao_updated_at?: string;
+    execucao_created_at?: string;
+    criar_template?: boolean;
+  }) {
+    const response = await this.api.post('/tarefa-execucao', payload);
+    return response.data;
+  }
+
+  /**
+   * Atualiza uma tarefa existente
+   * @param id ID da tarefa
+   * @param payload Dados a atualizar (pode ser parcial)
+   */
+  async atualizarTarefa(id: string, payload: Partial<{
+    execucao_setor_id: string;
+    execucao_titulo: string;
+    execucao_observacao: string;
+    execucao_descricao: string;
+    execucao_ordem: number;
+    execucao_prazo_deadline: number;
+    execucao_prazo_warning: number;
+    execucao_prazo_danger: number;
+    execucao_status: string;
+    execucao_sucesso: boolean;
+    execucao_cancel_at: string;
+    execucao_start_at: string;
+    execucao_finish_at: string;
+  }>) {
+    const response = await this.api.patch(`/tarefa-execucao/${id}`, payload);
+    return response.data;
+  }
+
+  // ========================================
+  // SETORES
+  // ========================================
+
+  /**
+   * Lista todos os setores com hierarquia (setores pai e filhos)
+   */
+  async listarSetores() {
+    const response = await this.api.get('/admin-setor');
+    return response.data;
+  }
+
+  // ========================================
+  // TEMPLATES DE TAREFAS
+  // ========================================
+
+  /**
+   * Lista templates de tarefas
+   * @param tipo Filtro de tipo (ex: 'servico')
+   * Retorna templates com: template_id, template_titulo, template_slug, 
+   * template_coins, template_observacoes, template_deadline, template_warning, template_danger
+   */
+  async listarTemplatesTarefas(tipo?: string) {
+    const params = tipo ? { tipo } : {};
+    const response = await this.api.get('/tarefa-template', { params });
+    return response.data;
+  }
+
+  /**
+   * Cria um novo template de tarefa (SEM criar a tarefa)
+   * @param payload Dados do template
+   */
+  async criarTemplate(payload: {
+    template_titulo: string;
+    template_observacoes?: string;
+    template_deadline: number; // em minutos
+    template_warning?: number;
+    template_danger?: number;
+    template_coins?: number;
+  }) {
+    const response = await this.api.post('/tarefa-template', payload);
+    return response.data;
+  }
+
+  /**
+   * Atualiza um template de tarefa existente
+   * @param id ID do template
+   * @param payload Dados do template
+   */
+  async atualizarTemplate(id: number, payload: {
+    template_titulo?: string;
+    template_observacoes?: string;
+    template_deadline?: number; // em minutos
+    template_warning?: number;
+    template_danger?: number;
+    template_coins?: number;
+  }) {
+    const response = await this.api.patch(`/tarefa-template/${id}`, payload);
+    return response.data;
+  }
+
+  /**
+   * Deleta uma execução de tarefa
+   * @param id ID da tarefa (pode ser número ou UUID string)
+   */
+  async deletarTarefa(id: number | string) {
+    const response = await this.api.delete(`/tarefa-execucao/${id}`);
+    return response.data;
+  }
 }
 
 // Exporta instância única (singleton)

@@ -13,10 +13,14 @@ import {
   FolderIcon,
   ChevronUpIcon,
   ChevronDownIcon,
+  CalendarIcon,
 } from '@heroicons/react/24/outline';
 import ProjectTimeline from './ProjectTimeline';
 import ComprasList from './ComprasList';
 import InsumosList from './InsumosList';
+import CronogramaList from './CronogramaList';
+import CriarCronogramaModal, { CronogramaFormData } from './CriarCronogramaModal';
+import VisualizarCronogramaModal from './VisualizarCronogramaModal';
 import { mandrillApi } from '@/lib/mandrill-api';
 
 interface ProjectTabsProps {
@@ -27,7 +31,7 @@ interface ProjectTabsProps {
   onAddFile?: () => void;
 }
 
-type TabType = 'informacoes' | 'equipe' | 'compras' | 'insumos';
+type TabType = 'informacoes' | 'equipe' | 'compras' | 'insumos' | 'cronograma';
 
 export default function ProjectTabs({
   project,
@@ -42,6 +46,18 @@ export default function ProjectTabs({
   const [loadingCompras, setLoadingCompras] = useState(false);
   const [arquivos, setArquivos] = useState<any[]>([]);
   const [loadingArquivos, setLoadingArquivos] = useState(false);
+  
+  // 🔥 Estados para Cronogramas (mock por enquanto)
+  const [cronogramas, setCronogramas] = useState<any[]>([]);
+  const [showCriarCronogramaModal, setShowCriarCronogramaModal] = useState(false);
+  const [showVisualizarCronogramaModal, setShowVisualizarCronogramaModal] = useState(false);
+  const [cronogramaSelecionado, setCronogramaSelecionado] = useState<any>(null);
+
+  // Verificar se pode criar cronograma (todas as entregas planejadas)
+  const podeCriarCronograma = () => {
+    // TODO: Implementar lógica real verificando se todas as entregas têm serviços e tarefas planejadas
+    return project.entregas && project.entregas.length > 0;
+  };
 
   // Buscar compras quando a aba estiver ativa
   useEffect(() => {
@@ -82,6 +98,26 @@ export default function ProjectTabs({
       setLoadingArquivos(false);
     }
   };
+
+  const handleCriarCronograma = (dados: CronogramaFormData) => {
+    const novoCronograma = {
+      id: `cronograma-${Date.now()}`,
+      nome: dados.nome,
+      data_criacao: new Date().toISOString(),
+      data_inicio: `${dados.data_inicio}T${dados.hora_inicio}:00`,
+      data_fim: `${dados.data_fim}T${dados.hora_fim}:00`,
+      prazo_aprovacao_cliente: dados.prazo_aprovacao_cliente,
+      prazo_aprovacao_supervisao: dados.prazo_aprovacao_supervisao,
+      total_entregas: project.entregas?.length || 0,
+      status: 'ativo' as const,
+    };
+
+    setCronogramas([...cronogramas, novoCronograma]);
+    setShowCriarCronogramaModal(false);
+    
+    // TODO: Salvar no backend
+    console.log('Cronograma criado:', novoCronograma);
+  };
   
   // Filtrar informações da timeline
   const informacoes = (project.timeline || []).filter((item: any) => item.type === 'informacao' && item.visible);
@@ -111,6 +147,12 @@ export default function ProjectTabs({
       icon: FolderIcon,
       count: arquivos.length,
     },
+    {
+      id: 'cronograma' as TabType,
+      label: 'Cronograma',
+      icon: CalendarIcon,
+      count: 0, // TODO: contar cronogramas criados
+    },
   ];
 
   return (
@@ -136,15 +178,6 @@ export default function ProjectTabs({
                 >
                   <Icon className="w-4 h-4" />
                   <span className="font-medium">{tab.label}</span>
-                  {tab.count > 0 && (
-                    <span className={`px-1.5 py-0.5 text-[10px] rounded-full ${
-                      isActive
-                        ? 'bg-blue-500 text-white'
-                        : 'bg-gray-700 text-gray-300'
-                    }`}>
-                      {tab.count}
-                    </span>
-                  )}
                 </button>
               );
             })}
@@ -241,8 +274,49 @@ export default function ProjectTabs({
               )}
             </div>
           )}
+
+          {activeTab === 'cronograma' && (
+            <CronogramaList
+              cronogramas={cronogramas}
+              podeCriar={podeCriarCronograma()}
+              onCriarCronograma={() => setShowCriarCronogramaModal(true)}
+              onVisualizarCronograma={(cronograma) => {
+                setCronogramaSelecionado(cronograma);
+                setShowVisualizarCronogramaModal(true);
+              }}
+              onExportarCronograma={(cronograma) => {
+                // TODO: Implementar exportação PDF
+                console.log('Exportar cronograma:', cronograma);
+                alert('Exportação de PDF será implementada em breve!');
+              }}
+            />
+          )}
         </div>
       )}
+
+      {/* Modais de Cronograma */}
+      <CriarCronogramaModal
+        isOpen={showCriarCronogramaModal}
+        onClose={() => setShowCriarCronogramaModal(false)}
+        onCriar={handleCriarCronograma}
+        totalEntregas={project.entregas?.length || 0}
+      />
+
+      <VisualizarCronogramaModal
+        isOpen={showVisualizarCronogramaModal}
+        onClose={() => {
+          setShowVisualizarCronogramaModal(false);
+          setCronogramaSelecionado(null);
+        }}
+        cronograma={cronogramaSelecionado}
+        onExportar={() => {
+          if (cronogramaSelecionado) {
+            // TODO: Implementar exportação PDF
+            console.log('Exportar cronograma:', cronogramaSelecionado);
+            alert('Exportação de PDF será implementada em breve!');
+          }
+        }}
+      />
     </div>
   );
 }

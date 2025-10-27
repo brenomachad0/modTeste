@@ -1,5 +1,8 @@
 // Configuração da API do backend
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://web-production-aee6f2.up.railway.app';
+
+// WebSocket URL
+export const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'https://web-production-aee6f2.up.railway.app';
 
 export const API_ENDPOINTS = {
   // Templates MOD
@@ -10,49 +13,98 @@ export const API_ENDPOINTS = {
     getByCategory: (categoria: string) => `${API_BASE_URL}/api/templates/mod/categoria/${categoria}`,
   },
   
-  // Projetos (para futuro)
+  // Projetos Supabase
   projetos: {
-    getAll: () => `${API_BASE_URL}/api/projetos`,
-    getById: (id: string) => `${API_BASE_URL}/api/projetos/${id}`,
-    create: () => `${API_BASE_URL}/api/projetos`,
-    update: (id: string) => `${API_BASE_URL}/api/projetos/${id}`,
-    delete: (id: string) => `${API_BASE_URL}/api/projetos/${id}`,
+    getAll: () => `${API_BASE_URL}/api/supabase/projetos`,
+    getById: (id: string) => `${API_BASE_URL}/api/supabase/projetos/${id}`,
+    getResumo: (id: string) => `${API_BASE_URL}/api/supabase/projetos/${id}/resumo`,
+    create: () => `${API_BASE_URL}/api/supabase/projetos`,
+    update: (id: string) => `${API_BASE_URL}/api/supabase/projetos/${id}`,
+    delete: (id: string) => `${API_BASE_URL}/api/supabase/projetos/${id}`,
   },
   
-  // Serviços (para futuro)
+  // Entregas Supabase
+  entregas: {
+    getById: (id: string) => `${API_BASE_URL}/api/supabase/entregas/${id}`,
+    update: (id: string) => `${API_BASE_URL}/api/supabase/entregas/${id}`,
+    recalcularProgresso: (id: string) => `${API_BASE_URL}/api/supabase/entregas/${id}/progresso`,
+    getPipeline: (id: string) => `${API_BASE_URL}/api/supabase/entregas/${id}/pipeline`,
+    configurarPipeline: (id: string) => `${API_BASE_URL}/api/supabase/entregas/${id}/pipeline/configurar`,
+  },
+  
+  // Serviços Supabase
   servicos: {
-    getAll: () => `${API_BASE_URL}/api/servicos`,
-    getById: (id: string) => `${API_BASE_URL}/api/servicos/${id}`,
-    getByProjeto: (projetoId: string) => `${API_BASE_URL}/api/servicos?projeto_id=${projetoId}`,
+    getById: (id: string) => `${API_BASE_URL}/api/supabase/servicos/${id}`,
+    update: (id: string) => `${API_BASE_URL}/api/supabase/servicos/${id}`,
+    iniciar: (id: string) => `${API_BASE_URL}/api/supabase/servicos/${id}/iniciar`,
+    concluir: (id: string) => `${API_BASE_URL}/api/supabase/servicos/${id}/concluir`,
   },
   
-  // Tarefas (para futuro)
+  // Tarefas Supabase
   tarefas: {
-    getAll: () => `${API_BASE_URL}/api/tarefas`,
-    getById: (id: string) => `${API_BASE_URL}/api/tarefas/${id}`,
-    getByServico: (servicoId: string) => `${API_BASE_URL}/api/tarefas?servico_id=${servicoId}`,
-    update: (id: string) => `${API_BASE_URL}/api/tarefas/${id}`,
-  }
+    getById: (id: string) => `${API_BASE_URL}/api/supabase/tarefas/${id}`,
+    update: (id: string) => `${API_BASE_URL}/api/supabase/tarefas/${id}`,
+    iniciar: (id: string) => `${API_BASE_URL}/api/supabase/tarefas/${id}/iniciar`,
+    concluir: (id: string) => `${API_BASE_URL}/api/supabase/tarefas/${id}/concluir`,
+    reordenar: (servicoId: string) => `${API_BASE_URL}/api/supabase/servicos/${servicoId}/tarefas/reordenar`,
+  },
+  
+  // Webhooks
+  webhooks: {
+    orcamentoAprovado: () => `${API_BASE_URL}/api/webhook/orcamento-aprovado`,
+    teste: () => `${API_BASE_URL}/api/webhook/teste`,
+  },
+  
+  // CRM (Read-only)
+  crm: {
+    projetos: () => `${API_BASE_URL}/api/projetos`,
+    preview: (demandaId: string) => `${API_BASE_URL}/api/projetos/${demandaId}/preview`,
+    estrutura: (demandaId: string) => `${API_BASE_URL}/api/projetos/${demandaId}/estrutura-limpa`,
+    carrousel: () => `${API_BASE_URL}/api/demandas/carrousel`,
+    orcamentos: () => `${API_BASE_URL}/api/orcamentos/aprovados`,
+  },
+  
+  // Health
+  health: () => `${API_BASE_URL}/health`,
 };
 
 // Utilitários para fazer requisições
 export const apiRequest = async (url: string, options: RequestInit = {}) => {
   try {
+    console.log('🌐 API Request:', url);
+    
     const response = await fetch(url, {
       headers: {
         'Content-Type': 'application/json',
         ...options.headers,
       },
+      mode: 'cors', // Explicitamente habilita CORS
       ...options,
     });
 
+    console.log('📡 Response status:', response.status, response.statusText);
+
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      const errorText = await response.text();
+      console.error('❌ Error response:', errorText);
+      throw new Error(`HTTP ${response.status}: ${response.statusText} - ${errorText}`);
     }
 
-    return await response.json();
-  } catch (error) {
-    console.error('API request failed:', error);
+    const data = await response.json();
+    console.log('✅ Response data:', data);
+    return data;
+  } catch (error: any) {
+    console.error('❌ API request failed:', {
+      url,
+      error: error.message,
+      stack: error.stack,
+    });
+    
+    // Mensagem de erro mais detalhada
+    if (error.name === 'TypeError' && error.message.includes('fetch')) {
+      throw new Error(`Erro de conexão: Não foi possível conectar ao servidor. Verifique se o backend está online e acessível. URL: ${url}`);
+    }
+    
     throw error;
   }
 };

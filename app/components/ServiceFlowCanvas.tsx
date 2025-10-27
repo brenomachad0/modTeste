@@ -38,6 +38,7 @@ interface ServiceFlowCanvasProps {
   onCancelFlow?: () => void; // 🔥 NOVO: Cancelar alterações
   selectedServiceId?: string | null; // 🔥 NOVO: ID do serviço selecionado
   onServiceAddedRef?: React.RefObject<(() => void) | null>; // 🔥 NOVO: Ref para ativar hasChanges ao adicionar
+  isSaving?: boolean; // ✅ 1. Estado de salvamento
 }
 
 // Componente customizado para os nodes (cards de serviço)
@@ -68,10 +69,22 @@ const ServiceNode = ({ data, selected }: any) => {
     const isInicio = data.boardType === 'orcamento';
     const isFim = data.boardType === 'entrega';
     
+    // ✅ 4. Outline baseado em conexão para nós de sistema
+    let borderColor = 'border-purple-500';
+    let ringColor = 'ring-purple-400/50';
+    
+    if (data.connectionStatus === 'system-connected') {
+      borderColor = 'border-green-500';
+      ringColor = 'ring-green-400/50';
+    } else if (data.connectionStatus === 'system-disconnected') {
+      borderColor = 'border-red-500';
+      ringColor = 'ring-red-400/50';
+    }
+    
     return (
       <div 
         className={`bg-gray-800 border-2 p-4 min-w-[180px] max-w-[180px] shadow-xl transition-all relative ${
-          isSelected ? 'border-purple-400 ring-4 ring-purple-400/50' : 'border-purple-500'
+          isSelected ? `${borderColor} ring-4 ${ringColor}` : borderColor
         }`}
         style={{
           borderRadius: isInicio 
@@ -107,12 +120,25 @@ const ServiceNode = ({ data, selected }: any) => {
     );
   }
 
+  // ✅ 2. Outline amarelo se sem conexões
+  let borderColor = 'border-gray-700';
+  let ringColor = 'ring-purple-500/50';
+  let hoverColor = 'hover:border-purple-500';
+  
+  if (data.connectionStatus === 'warning') {
+    borderColor = 'border-yellow-500';
+    ringColor = 'ring-yellow-500/50';
+    hoverColor = 'hover:border-yellow-400';
+  } else if (isSelected) {
+    borderColor = 'border-purple-500';
+  }
+
   return (
     <div 
       className={`bg-gray-800 border-2 rounded-lg p-4 min-w-[280px] shadow-xl transition-all cursor-pointer relative ${
         isSelected 
-          ? 'border-purple-500 ring-4 ring-purple-500/50 shadow-2xl shadow-purple-500/30' 
-          : 'border-gray-700 hover:border-purple-500 hover:shadow-2xl'
+          ? `${borderColor} ring-4 ${ringColor} shadow-2xl shadow-purple-500/30` 
+          : `${borderColor} ${hoverColor} hover:shadow-2xl`
       }`}
       onClick={() => data.onServiceClick?.(data.id)}
     >
@@ -209,18 +235,32 @@ export default function ServiceFlowCanvas({
   onServiceDelete,
   onAddService,
   onSaveFlow,
-  onCancelFlow, // 🔥 NOVO
-  selectedServiceId = null, // 🔥 NOVO
-  onServiceAddedRef, // 🔥 NOVO: Ref para ativar hasChanges ao adicionar
+  onCancelFlow,
+  selectedServiceId = null,
+  onServiceAddedRef,
+  isSaving = false, // ✅ 1. Estado de salvamento
 }: ServiceFlowCanvasProps) {
   const [showMiniMap, setShowMiniMap] = useState(false);
   const [hideTimeout, setHideTimeout] = useState<NodeJS.Timeout | null>(null);
   const [hasChanges, setHasChanges] = useState(false);
   const [edgeToDelete, setEdgeToDelete] = useState<Edge | null>(null);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
-  const hasInitialized = React.useRef(false);
   
-  // 🔥 NOVO: Conectar ref para permitir que o pai ative hasChanges ao adicionar serviço
+  // 🎯 SOLUÇÃO LIMPA: Guardar versão original dos dados quando componente monta
+  const originalDataRef = React.useRef<{
+    servicos: Servico[];
+    boardData: any[];
+  } | null>(null);
+  
+  // Inicializar referência na primeira montagem
+  if (!originalDataRef.current) {
+    originalDataRef.current = {
+      servicos: [...servicos],
+      boardData: [...boardData],
+    };
+  }
+  
+  // 🔥 Conectar ref para permitir que o pai ative hasChanges ao adicionar serviço
   React.useEffect(() => {
     if (onServiceAddedRef) {
       onServiceAddedRef.current = () => {
@@ -229,7 +269,6 @@ export default function ServiceFlowCanvas({
       };
     }
     
-    // Cleanup
     return () => {
       if (onServiceAddedRef) {
         onServiceAddedRef.current = null;
@@ -237,33 +276,34 @@ export default function ServiceFlowCanvas({
     };
   }, [onServiceAddedRef]);
   
-  // 🔥 MEMOIZAR nodes iniciais para não recriar a cada render
+  // 🔥 SOLUÇÃO LIMPA: Criar nodes apenas UMA VEZ na montagem ou quando cancelar
   const initialNodes = React.useMemo(() => {
-    // 🔥 MUDANÇA: Sempre recriar quando servicos mudar (para detectar novos serviços temporários)
-    // Não usar hasInitialized mais, deixar o useMemo controlar baseado nas dependências
+    // Usar dados originais sempre (eles não mudam durante edição)
+    const servicosParaUsar = servicos;
+    const boardDataParaUsar = boardData;
     
-    // Se não temos serviços ainda, retornar array vazio (não undefined para evitar erro de Handle)
-    if (servicos.length === 0) {
+    // Se não temos serviços ainda, retornar array vazio
+    if (servicosParaUsar.length === 0) {
       return [];
     }
     
     // 🔍 LOG ANÁLISE: Criação de nodes
     console.group('🎨 [BOARD] Criando Nodes do ReactFlow');
-    console.log('📊 Boards disponíveis:', boardData.length);
-    console.log('🔧 Serviços a processar:', servicos.length);
+    console.log('📊 Boards disponíveis:', boardDataParaUsar.length);
+    console.log('🔧 Serviços a processar:', servicosParaUsar.length);
     
     // 🔥 NOVO: Calcular posição central do canvas para serviços novos sem board
     const canvasCenterX = 500;
     const canvasCenterY = 200;
     
     // 🔍 DEBUG: Verificar tipos de boards recebidos
-    const boardTypes = boardData.reduce((acc: any, b: any) => {
+    const boardTypes = boardDataParaUsar.reduce((acc: any, b: any) => {
       const tipo = b.board_tipo || b.board_entidade; // 🔥 Usar board_tipo como prioridade
       acc[tipo] = (acc[tipo] || 0) + 1;
       return acc;
     }, {});
     console.log('📋 Tipos de boards (por board_tipo):', boardTypes);
-    console.table(boardData.map((b: any) => ({
+    console.table(boardDataParaUsar.map((b: any) => ({
       tipo: b.board_tipo || b.board_entidade,
       entidade: b.board_entidade,
       titulo: b.proj_servico_titulo || '(sem titulo)',
@@ -274,16 +314,29 @@ export default function ServiceFlowCanvas({
     })));
     
     // 🔥 Primeiro: Criar nodes para todos os boards existentes
-    const allNodes: Node[] = boardData.map((board: any, index: number) => {
+    const allNodes: Node[] = boardDataParaUsar.map((board: any, index: number) => {
       const position = {
         x: Number(board.board_position_x) || (250 + index * 350), 
         y: Number(board.board_position_y) || 150
       };
       
-      const nodeId = board.board_node_id || `node-${index}`;
-      
-      // 🔥 USAR board_tipo ao invés de board_entidade!
+      // 🔥 SOLUÇÃO: Garantir nodeId único e consistente
+      // Para boards de sistema, usar tipo como ID se não houver board_node_id
       const boardTipo = board.board_tipo || board.board_entidade;
+      let nodeId = board.board_node_id;
+      
+      if (!nodeId) {
+        // Se não tem board_node_id, criar baseado no tipo
+        if (boardTipo === 'orcamento') {
+          nodeId = 'orcamento-inicio';
+        } else if (boardTipo === 'entrega') {
+          nodeId = 'entrega-fim';
+        } else {
+          // Para serviços, usar board_entidade_id ou fallback
+          nodeId = board.board_entidade_id || `node-${index}`;
+        }
+        console.warn(`⚠️  Board sem node_id, usando: ${nodeId}`);
+      }
       
       // Determinar os dados baseado no tipo de entidade
       let nodeData: any = {
@@ -295,14 +348,14 @@ export default function ServiceFlowCanvas({
       
       if (boardTipo === 'servico') {
         // Buscar dados do serviço
-        const servico = servicos.find(s => s.id === board.board_entidade_id);
+        const servico = servicosParaUsar.find(s => s.id === board.board_entidade_id);
         if (servico) {
           nodeData = {
-            ...nodeData,
-            ...servico,
-            onServiceClick,
-            isSelected: selectedServiceId === servico.id, // 🔥 NOVO: Marcar como selecionado
-          };
+          ...nodeData,
+          ...servico,
+          onServiceClick,
+          isSelected: false, // Será atualizado por useEffect
+        };
           console.log(`✅ Serviço ${servico.nome}: node_id=${nodeId.substring(0,12)}... pos=(${position.x},${position.y})`);
         } else {
           console.warn(`⚠️  Serviço não encontrado para board_entidade_id: ${board.board_entidade_id}`);
@@ -341,8 +394,8 @@ export default function ServiceFlowCanvas({
     
     // 🔥 NOVO: Adicionar nodes para serviços sem board (temporários)
     // ✅ IMPORTANTE: Excluir boards de sistema (orcamento/entrega) - eles não são serviços!
-    const servicosSemBoard = servicos.filter(servico => 
-      !boardData.some(board => 
+    const servicosSemBoard = servicosParaUsar.filter(servico => 
+      !boardDataParaUsar.some(board => 
         board.board_entidade_id === servico.id && 
         (board.board_tipo === 'servico' || board.board_entidade === 'servico')
       )
@@ -371,7 +424,7 @@ export default function ServiceFlowCanvas({
           boardType: 'servico',
           onServiceClick,
           onDelete: onServiceDelete,
-          isSelected: selectedServiceId === servico.id,
+          isSelected: false, // Será atualizado por useEffect
         };
         
         allNodes.push({
@@ -391,14 +444,16 @@ export default function ServiceFlowCanvas({
     console.groupEnd();
 
     return allNodes;
-  }, [servicos, boardData, onServiceClick, onServiceDelete, selectedServiceId]); // 🔥 Recriar quando seleção mudar
+  }, [servicos, boardData, onServiceClick, onServiceDelete]); // Recriar apenas quando dados externos mudarem (SEM selectedServiceId)
   
-  // 🔥 ATUALIZADO: Criar edges iniciais baseadas em board_next (array)
+  // 🔥 SOLUÇÃO LIMPA: Criar edges apenas UMA VEZ na montagem
   const initialEdges = React.useMemo(() => {
+    const boardDataParaUsar = boardData;
+    
     console.group('🔗 [BOARD] Criando Edges (Conexões)');
     const edgesArray: Edge[] = [];
     
-    boardData.forEach((board: any) => {
+    boardDataParaUsar.forEach((board: any) => {
       if (!board.board_next || board.board_next.length === 0) {
         console.log(`⏭️  Board ${board.board_tipo} sem board_next, pulando...`);
         return;
@@ -424,11 +479,11 @@ export default function ServiceFlowCanvas({
           source: sourceId,
           target: targetNodeId,
           type: 'default',
-          animated: false, // 🔥 DESATIVADO: Sem animação
-          style: { stroke: '#a855f7', strokeWidth: 3 },
+          animated: true, // ✅ 3. Edges animados
+          style: { stroke: '#ffffff', strokeWidth: 3 }, // ✅ Branco
           markerEnd: {
             type: MarkerType.ArrowClosed,
-            color: '#a855f7',
+            color: '#ffffff', // ✅ Branco
           },
         });
         
@@ -440,18 +495,61 @@ export default function ServiceFlowCanvas({
     console.groupEnd();
     
     return edgesArray;
-  }, [boardData]); // Recriar apenas quando boardData mudar
+  }, [boardData]); // Recriar apenas quando dados externos mudarem
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   
-  // 🔥 NOVO: Atualizar nodes quando initialNodes mudar (serviços novos adicionados)
+  // 🔥 SOLUÇÃO LIMPA: Atualizar APENAS isSelected sem recriar nodes
   React.useEffect(() => {
-    if (initialNodes.length > 0) {
-      setNodes(initialNodes);
-      console.log('🔄 Nodes atualizados:', initialNodes.length);
-    }
-  }, [initialNodes, setNodes]);
+    setNodes((nds) =>
+      nds.map((node) => ({
+        ...node,
+        data: {
+          ...node.data,
+          isSelected: selectedServiceId === node.data.id,
+        },
+      }))
+    );
+  }, [selectedServiceId, setNodes]);
+  
+  // ✅ 2 e 4: Atualizar status de conexões dos nodes
+  React.useEffect(() => {
+    setNodes((nds) =>
+      nds.map((node) => {
+        const hasIncoming = edges.some(e => e.target === node.id);
+        const hasOutgoing = edges.some(e => e.source === node.id);
+        const isSystemNode = node.data.boardType === 'orcamento' || node.data.boardType === 'entrega';
+        
+        let connectionStatus = 'connected';
+        
+        if (isSystemNode) {
+          // 4. Nós de sistema: verde se conectado, vermelho se não
+          const isInicio = node.data.boardType === 'orcamento';
+          const isFim = node.data.boardType === 'entrega';
+          
+          if (isInicio) {
+            connectionStatus = hasOutgoing ? 'system-connected' : 'system-disconnected';
+          } else if (isFim) {
+            connectionStatus = hasIncoming ? 'system-connected' : 'system-disconnected';
+          }
+        } else {
+          // 2. Nós regulares (serviços): amarelo se sem entrada OU sem saída
+          if (!hasIncoming || !hasOutgoing) {
+            connectionStatus = 'warning';
+          }
+        }
+        
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            connectionStatus,
+          },
+        };
+      })
+    );
+  }, [edges, setNodes]);
 
   // Marcar que não é mais carregamento inicial após primeiro render
   React.useEffect(() => {
@@ -506,11 +604,11 @@ export default function ServiceFlowCanvas({
       const newEdge = {
         ...params,
         type: 'default', // Tipo default usa curvas bezier
-        animated: false, // 🔥 DESATIVADO: Sem animação
-        style: { stroke: '#a855f7', strokeWidth: 3 },
+        animated: true, // ✅ 3. Edges animados
+        style: { stroke: '#ffffff', strokeWidth: 3 }, // ✅ Branco
         markerEnd: {
           type: MarkerType.ArrowClosed,
-          color: '#a855f7',
+          color: '#ffffff', // ✅ Branco
         },
       };
       setEdges((eds) => addEdge(newEdge, eds));
@@ -541,18 +639,40 @@ export default function ServiceFlowCanvas({
     if (onSaveFlow) {
       onSaveFlow(nodes, edges);
       setHasChanges(false);
+      console.log('✅ Fluxo salvo');
     }
   }, [nodes, edges, onSaveFlow]);
 
   const handleCancelFlow = useCallback(() => {
     if (onCancelFlow) {
       onCancelFlow();
+      
+      // 🔥 Restaurar nodes e edges do estado original
+      if (originalDataRef.current) {
+        console.log('🔄 Restaurando dados originais');
+        // Forçar recriação resetando para initialNodes/initialEdges
+        setNodes(initialNodes);
+        setEdges(initialEdges);
+      }
+      
       setHasChanges(false);
+      console.log('❌ Edição cancelada');
     }
-  }, [onCancelFlow]);
+  }, [onCancelFlow, initialNodes, initialEdges, setNodes, setEdges]);
 
   return (
     <div className="w-full h-[600px] bg-gray-900 rounded-lg border border-gray-700 overflow-hidden relative">
+      {/* ✅ 1. Overlay de salvamento DENTRO do canvas */}
+      {isSaving && (
+        <div className="absolute inset-0 z-50 bg-gray-900/95 backdrop-blur-sm flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-purple-500 mx-auto mb-4"></div>
+            <h3 className="text-white text-lg font-semibold mb-2">Salvando fluxo</h3>
+            <p className="text-gray-400 text-sm">Processando alterações...</p>
+          </div>
+        </div>
+      )}
+      
       {/* Modal de Confirmação de Exclusão de Conexão */}
       {edgeToDelete && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">

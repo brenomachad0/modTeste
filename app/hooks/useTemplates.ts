@@ -1,12 +1,26 @@
 import { useState, useEffect } from 'react';
+import { mandrillApi } from '@/lib/mandrill-api';
 
+// Interface para template da API
+export interface TemplateAPI {
+  template_id: string;
+  template_titulo: string;
+  template_slug: string;
+  template_coins: number;
+  template_observacoes: string;
+  template_deadline: number; // Duração em minutos
+  template_warning: number;
+  template_danger: number;
+}
+
+// Interface para template formatado (compatibilidade)
 export interface TemplateWithTasks {
-  id: number;
+  id: string;
   nome: string;
   descricao: string;
   categoria: string;
-  prazo_padrao_dias: number;
-  valor_estimado: number;
+  prazo_minutos: number; // Mudou de prazo_padrao_dias para prazo_minutos
+  setor?: string;
 }
 
 export interface TaskTemplate {
@@ -14,7 +28,7 @@ export interface TaskTemplate {
   nome: string;
   setor: string;
   responsavel_tipo: string;
-  prazo_horas: number;
+  prazo_horas: number; // Em minutos (compatibilidade com sistema)
   mandrill_coins: number;
   instrucao: string;
   categoria: string;
@@ -22,90 +36,80 @@ export interface TaskTemplate {
   tasks?: any[];
 }
 
-export const convertApiTemplateToTaskTemplate = (template: TemplateWithTasks): TaskTemplate => {
+/**
+ * Converte template da API para formato do componente
+ */
+export const convertApiTemplateToTaskTemplate = (template: TemplateAPI): TaskTemplate => {
+  // Extrai categoria do slug (ex: "servico-video" -> "video")
+  const categoria = template.template_slug.replace('servico-', '').split('-')[0] || 'geral';
+  
   return {
-    id: `template_${template.id}`,
-    nome: template.nome,
+    id: template.template_id,
+    nome: template.template_titulo,
     setor: 'Produção',
     responsavel_tipo: 'Geral',
-    prazo_horas: template.prazo_padrao_dias * 24,
-    mandrill_coins: Math.round(template.valor_estimado / 100),
-    instrucao: template.descricao || '',
-    categoria: template.categoria,
+    prazo_horas: template.template_deadline, // Já vem em minutos da API
+    mandrill_coins: template.template_coins,
+    instrucao: template.template_observacoes || '',
+    categoria: categoria,
     templates: [],
     tasks: []
   };
 };
 
-// Mock templates
-const MOCK_TEMPLATES: TemplateWithTasks[] = [
-  {
-    id: 1,
-    nome: 'Video Promocional',
-    descricao: 'Criação de vídeo promocional de produto',
-    categoria: 'video',
-    prazo_padrao_dias: 5,
-    valor_estimado: 2000
-  },
-  {
-    id: 2,
-    nome: 'Campanha Marketing Digital',
-    descricao: 'Estratégia completa de marketing digital',
-    categoria: 'marketing',
-    prazo_padrao_dias: 10,
-    valor_estimado: 5000
-  },
-  {
-    id: 3,
-    nome: 'Modelagem 3D',
-    descricao: 'Criação de modelo 3D de produto',
-    categoria: '3d',
-    prazo_padrao_dias: 7,
-    valor_estimado: 3000
-  },
-  {
-    id: 4,
-    nome: 'Animação Motion Graphics',
-    descricao: 'Animação com motion graphics',
-    categoria: 'motion',
-    prazo_padrao_dias: 8,
-    valor_estimado: 4000
-  },
-  {
-    id: 5,
-    nome: 'Design de Interface',
-    descricao: 'Design de interface de aplicativo',
-    categoria: 'design',
-    prazo_padrao_dias: 6,
-    valor_estimado: 2500
-  }
-];
+/**
+ * Converte template da API para TemplateWithTasks
+ */
+export const convertApiToTemplateWithTasks = (template: TemplateAPI): TemplateWithTasks => {
+  const categoria = template.template_slug.replace('servico-', '').split('-')[0] || 'geral';
+  
+  return {
+    id: template.template_id,
+    nome: template.template_titulo,
+    descricao: template.template_observacoes || '',
+    categoria: categoria,
+    prazo_minutos: template.template_deadline,
+    setor: 'Produção'
+  };
+};
 
+/**
+ * Hook para carregar templates de tarefas da API
+ * Filtra apenas templates com slug começando em "servico-"
+ */
 export const useTemplates = () => {
-  const [templates, setTemplates] = useState<TemplateWithTasks[]>(MOCK_TEMPLATES);
-  const [loading, setLoading] = useState(false);
+  const [templates, setTemplates] = useState<TemplateWithTasks[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Comentado para evitar erro de fetch
-  // Se quiser conectar com API real, descomente e configure o endpoint
-  /*
   useEffect(() => {
     const fetchTemplates = async () => {
       try {
         setLoading(true);
-        const response = await fetch('http://localhost:3001/api/mod/templates');
+        // Usa parâmetro tipo=servico para filtrar no backend
+        const response = await mandrillApi.listarTemplatesTarefas('servico');
         
-        if (!response.ok) {
-          throw new Error(`Erro ao buscar templates: ${response.status}`);
+        // A API pode retornar { data: [...] } ou apenas [...]
+        const data = response?.data || response;
+        
+        // Verifica se data é array
+        if (!Array.isArray(data)) {
+          console.error('Resposta da API não é um array:', data);
+          setTemplates([]);
+          setError('Formato de resposta inválido da API');
+          return;
         }
         
-        const data = await response.json();
-        setTemplates(data || MOCK_TEMPLATES);
+        // Converte templates para formato do componente
+        const templatesServico = data.map(convertApiToTemplateWithTasks);
+        
+        console.log(`✅ ${templatesServico.length} templates de serviço carregados`);
+        setTemplates(templatesServico);
         setError(null);
       } catch (err) {
         console.error('Erro ao carregar templates:', err);
-        setError(err instanceof Error ? err.message : 'Erro desconhecido');
-        setTemplates(MOCK_TEMPLATES);
+        setError(err instanceof Error ? err.message : 'Erro ao carregar templates');
+        setTemplates([]);
       } finally {
         setLoading(false);
       }
@@ -113,7 +117,7 @@ export const useTemplates = () => {
 
     fetchTemplates();
   }, []);
-  */
 
   return { templates, loading, error };
 };
+

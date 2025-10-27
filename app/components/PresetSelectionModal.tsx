@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useTemplates, convertApiTemplateToTaskTemplate, TemplateWithTasks } from '../hooks/useTemplates';
+import { useTemplates, TemplateWithTasks } from '../hooks/useTemplates';
 
 interface PresetSelectionModalProps {
   isOpen: boolean;
@@ -7,6 +7,19 @@ interface PresetSelectionModalProps {
   onTemplateSelect: (template: any) => void;
   onCustomTask: () => void;
 }
+
+// Função para formatar duração em DD HH:mm:ss
+// Recebe minutos e formata para DD HH:mm:ss
+const formatarDuracao = (minutos: number): string => {
+  const totalSegundos = Math.floor(minutos * 60);
+  
+  const d = Math.floor(totalSegundos / 86400);
+  const h = Math.floor((totalSegundos % 86400) / 3600);
+  const m = Math.floor((totalSegundos % 3600) / 60);
+  const s = totalSegundos % 60;
+  
+  return `${String(d).padStart(2, '0')} ${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+};
 
 const PresetSelectionModal: React.FC<PresetSelectionModalProps> = ({
   isOpen,
@@ -38,28 +51,25 @@ const PresetSelectionModal: React.FC<PresetSelectionModalProps> = ({
     { value: 'desenvolvimento', label: 'Desenvolvimento' }
   ];
 
-  const handleTemplateSelect = async (template: any) => {
+  const handleTemplateSelect = async (template: TemplateWithTasks) => {
     try {
-      // Converter para o formato esperado pelo modal
-      const convertedTemplate = convertApiTemplateToTaskTemplate(template);
-      onTemplateSelect(convertedTemplate);
-      onClose();
-    } catch (err) {
-      console.error('Erro ao processar template:', err);
-      // Em caso de erro, enviar o template básico
+      // Converte o template para o formato de tarefa
       onTemplateSelect({
-        id: `template_${template.id}`,
+        id: template.id,
         nome: template.nome,
-        setor: 'Produção',
+        setor: template.setor || 'Produção',
         responsavel_tipo: 'Geral',
-        prazo_horas: template.prazo_padrao_dias * 24,
-        mandrill_coins: Math.round(template.valor_estimado / 100),
+        prazo_horas: template.prazo_minutos, // Já está em minutos
+        mandrill_coins: 50,
         instrucao: template.descricao || '',
         categoria: template.categoria,
         templates: [],
         tasks: []
       });
       onClose();
+    } catch (err) {
+      console.error('Erro ao processar template:', err);
+      alert('Erro ao selecionar template. Tente novamente.');
     }
   };
 
@@ -129,20 +139,34 @@ const PresetSelectionModal: React.FC<PresetSelectionModalProps> = ({
                 <button
                   key={template.id}
                   onClick={() => handleTemplateSelect(template)}
-                  className="w-full p-3 bg-gray-700 hover:bg-gray-600 text-left rounded border border-gray-600 hover:border-gray-500 transition-colors"
+                  className="w-full p-4 bg-gray-700 hover:bg-gray-600 text-left rounded border border-gray-600 hover:border-gray-500 transition-colors"
                 >
-                  <div className="flex justify-between items-start">
-                    <div className="flex-1">
-                      <div className="font-medium text-white">{template.nome}</div>
-                      <div className="text-sm text-gray-300 mt-1">{template.descricao}</div>
-                      <div className="flex items-center gap-4 mt-2 text-xs text-gray-400">
-                        <span className="bg-gray-600 px-2 py-1 rounded capitalize">
-                          {template.categoria}
-                        </span>
-                        <span>{template.prazo_padrao_dias} dias</span>
-                        <span>R$ {template.valor_estimado.toLocaleString('pt-BR')}</span>
-                      </div>
+                  <div className="space-y-2">
+                    {/* Título */}
+                    <div className="font-semibold text-white text-lg">{template.nome}</div>
+                    
+                    {/* Setor Responsável */}
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className="text-gray-400">Setor:</span>
+                      <span className="text-gray-200">Produção</span>
                     </div>
+                    
+                    {/* Duração */}
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className="text-gray-400">Duração:</span>
+                      <span className="font-mono text-blue-300">{formatarDuracao(template.prazo_minutos)}</span>
+                      <span className="text-gray-500 text-xs">
+                        ({Math.floor(template.prazo_minutos / 60)}h {template.prazo_minutos % 60}min)
+                      </span>
+                    </div>
+                    
+                    {/* Descrição */}
+                    {template.descricao && (
+                      <div className="text-sm text-gray-300 mt-2 pt-2 border-t border-gray-600">
+                        <span className="text-gray-400">Descrição: </span>
+                        {template.descricao}
+                      </div>
+                    )}
                   </div>
                 </button>
               ))}

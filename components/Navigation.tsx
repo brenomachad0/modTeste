@@ -6,8 +6,6 @@ import { usePathname } from 'next/navigation';
 const navigation = [
   { name: 'Dashboard', href: '/' },
   { name: 'Projetos', href: '/projetos' },
-  { name: 'Entregas', href: '/entregas' },
-  { name: 'Serviços', href: '/servicos' },
 ];
 
 export default function Navigation() {

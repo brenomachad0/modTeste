@@ -1,19 +1,23 @@
 'use client';
 
-import { Save, Copy, X } from 'lucide-react';
+import { Save, Copy, Edit, X } from 'lucide-react';
 
 interface SaveTaskModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSaveOnly: () => void;
-  onSaveAsTemplate: () => void;
+  onSaveAsTemplate?: () => void;
+  onUpdateTemplate?: () => void;
+  hasTemplate?: boolean; // Se a tarefa já tem um template associado
 }
 
 export default function SaveTaskModal({ 
   isOpen, 
   onClose, 
   onSaveOnly, 
-  onSaveAsTemplate 
+  onSaveAsTemplate,
+  onUpdateTemplate,
+  hasTemplate = false
 }: SaveTaskModalProps) {
   if (!isOpen) return null;
 
@@ -43,25 +47,43 @@ export default function SaveTaskModal({
             >
               <Save className="w-5 h-5 flex-shrink-0" />
               <div>
-                <div className="font-semibold">Apenas criar tarefa</div>
-                <div className="text-xs text-green-200">Criar esta tarefa específica</div>
+                <div className="font-semibold">Salvar apenas a tarefa</div>
+                <div className="text-xs text-green-200">Atualizar apenas esta tarefa específica</div>
               </div>
             </button>
 
-            {/* Salvar como template */}
-            <button
-              onClick={() => {
-                onSaveAsTemplate();
-                onClose();
-              }}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-4 py-3 transition-colors flex items-center gap-3 text-left"
-            >
-              <Copy className="w-5 h-5 flex-shrink-0" />
-              <div>
-                <div className="font-semibold">Criar novo template</div>
-                <div className="text-xs text-blue-200">Salvar como template para reutilizar depois</div>
-              </div>
-            </button>
+            {/* Atualizar template OU criar novo */}
+            {hasTemplate && onUpdateTemplate ? (
+              <button
+                onClick={() => {
+                  onUpdateTemplate();
+                  onClose();
+                }}
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-4 py-3 transition-colors flex items-center gap-3 text-left"
+              >
+                <Edit className="w-5 h-5 flex-shrink-0" />
+                <div>
+                  <div className="font-semibold">Atualizar template</div>
+                  <div className="text-xs text-blue-200">Atualizar o template associado a esta tarefa</div>
+                </div>
+              </button>
+            ) : (
+              onSaveAsTemplate && (
+                <button
+                  onClick={() => {
+                    onSaveAsTemplate();
+                    onClose();
+                  }}
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-4 py-3 transition-colors flex items-center gap-3 text-left"
+                >
+                  <Copy className="w-5 h-5 flex-shrink-0" />
+                  <div>
+                    <div className="font-semibold">Criar novo template</div>
+                    <div className="text-xs text-blue-200">Salvar como template para reutilizar depois</div>
+                  </div>
+                </button>
+              )
+            )}
 
             {/* Cancelar */}
             <button

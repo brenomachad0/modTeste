@@ -12,7 +12,7 @@ export class SocketManager {
   private listeners: Map<string, Set<EventCallback>> = new Map();
 
   constructor(url?: string) {
-    this.url = url || process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:3001';
+    this.url = url || process.env.NEXT_PUBLIC_WS_URL || 'https://web-production-aee6f2.up.railway.app';
   }
 
   /**

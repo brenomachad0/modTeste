@@ -35,6 +35,19 @@ interface TaskViewModalProps {
 export default function TaskViewModal({ isOpen, onClose, task }: TaskViewModalProps) {
   if (!isOpen || !task) return null;
 
+  // Função para formatar minutos no formato DD HH:mm:ss
+  const formatarDuracao = (minutos: number): string => {
+    const totalSegundos = Math.floor(minutos * 60);
+    
+    const dias = Math.floor(totalSegundos / 86400);
+    const horas = Math.floor((totalSegundos % 86400) / 3600);
+    const mins = Math.floor((totalSegundos % 3600) / 60);
+    const segs = totalSegundos % 60;
+    
+    // Formato: DD HH:mm:ss
+    return `${String(dias).padStart(2, '0')} ${String(horas).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(segs).padStart(2, '0')}`;
+  };
+
   const statusConfig = {
     planejada: { color: 'bg-gray-500', label: 'Planejada' },
     proxima: { color: 'bg-orange-500', label: 'Próxima' },
@@ -83,7 +96,8 @@ export default function TaskViewModal({ isOpen, onClose, task }: TaskViewModalPr
                 <Clock className="w-4 h-4 text-green-400" />
                 <span className="text-sm font-medium text-gray-400">Prazo</span>
               </div>
-              <p className="text-white">{task.prazo_horas}h</p>
+              <p className="text-white font-mono">{formatarDuracao(task.prazo_horas)}</p>
+              <p className="text-gray-500 text-xs mt-0.5">(dias HH:mm:ss)</p>
             </div>
           </div>
 
@@ -147,8 +161,11 @@ export default function TaskViewModal({ isOpen, onClose, task }: TaskViewModalPr
                 {task.tempo_execucao && (
                   <div>
                     <span className="text-xs text-gray-400">Tempo Executado</span>
-                    <p className="text-white text-sm">
-                      {Math.round(task.tempo_execucao / 60)}min
+                    <p className="text-white text-sm font-mono">
+                      {formatarDuracao(task.tempo_execucao)}
+                    </p>
+                    <p className="text-gray-500 text-xs mt-0.5">
+                      (dias HH:mm:ss)
                     </p>
                   </div>
                 )}
