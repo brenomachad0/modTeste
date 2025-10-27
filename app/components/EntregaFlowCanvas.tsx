@@ -113,16 +113,16 @@ const EntregaNode = ({ data, selected }: any) => {
         <Handle
           type="target"
           position={Position.Left}
-          className="w-3 h-3 !bg-pink-500 !border-2 !border-white"
-          style={{ left: -6 }}
+          className="w-1 h-1 !bg-pink-500 !border !border-white"
+          style={{ left: -2 }}
         />
         
         {/* Handle de Saída (direita) */}
         <Handle
           type="source"
           position={Position.Right}
-          className="w-3 h-3 !bg-purple-500 !border-2 !border-white"
-          style={{ right: -6 }}
+          className="w-1 h-1 !bg-purple-500 !border !border-white"
+          style={{ right: -2 }}
         />
 
         {/* Ícone da Entrega - Centralizado */}
@@ -538,15 +538,15 @@ export default function EntregaFlowCanvas({
         }
 
         .react-flow__handle {
-          width: 16px !important;
-          height: 16px !important;
+          width: 4px !important;
+          height: 4px !important;
           border-radius: 50% !important;
           transition: all 0.2s ease !important;
         }
 
         .react-flow__handle:hover {
-          transform: scale(1.3) !important;
-          box-shadow: 0 0 10px rgba(236, 72, 153, 0.5) !important;
+          transform: scale(2) !important;
+          box-shadow: 0 0 6px rgba(236, 72, 153, 0.6) !important;
         }
 
         .react-flow__handle-connecting {
