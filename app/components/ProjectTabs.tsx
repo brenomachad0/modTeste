@@ -205,7 +205,7 @@ export default function ProjectTabs({
 
       {/* Conteúdo das abas */}
       {expanded && (
-        <div className="p-4">
+        <div className="p-4 max-h-[500px] overflow-y-auto custom-scrollbar">
           {activeTab === 'informacoes' && (
             <ProjectTimeline
               timeline={project.timeline || []}
@@ -317,6 +317,33 @@ export default function ProjectTabs({
           }
         }}
       />
+      
+      {/* Estilos customizados para scrollbar */}
+      <style jsx>{`
+        .custom-scrollbar::-webkit-scrollbar {
+          width: 8px;
+        }
+        
+        .custom-scrollbar::-webkit-scrollbar-track {
+          background: #1f2937;
+          border-radius: 4px;
+        }
+        
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background: #4b5563;
+          border-radius: 4px;
+        }
+        
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+          background: #6b7280;
+        }
+        
+        /* Firefox */
+        .custom-scrollbar {
+          scrollbar-width: thin;
+          scrollbar-color: #4b5563 #1f2937;
+        }
+      `}</style>
     </div>
   );
 }
