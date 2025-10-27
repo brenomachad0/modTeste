@@ -719,7 +719,7 @@ export default function EntregaFlowCanvas({
           width: 16px !important;
           height: 16px !important;
           border-radius: 50% !important;
-          transition: all 0.2s ease !important;
+          transition: opacity 0.2s ease !important;
           background: #ffffff !important;
           border: 2px solid #111827 !important;
         }
@@ -729,26 +729,21 @@ export default function EntregaFlowCanvas({
         .react-flow__handle-right,
         .react-flow__handle-top,
         .react-flow__handle-bottom {
-          transform-origin: 50% 50% !important;
           opacity: 0 !important;
         }
 
         /* Quando estiver conectando, mostrar TODOS os handles de destino */
         .react-flow__handle-connecting {
           opacity: 1 !important;
-          transform: scale(1.5) translate(0, 0) !important;
-          transform-origin: 50% 50% !important;
           background: #ffffff !important;
           border-color: #a855f7 !important;
           box-shadow: 0 0 12px rgba(168, 85, 247, 0.9) !important;
           z-index: 10 !important;
         }
 
-        /* Quando a conexão for válida, handle fica VERDE e GRANDE */
+        /* Quando a conexão for válida, handle fica VERDE */
         .react-flow__handle-valid {
           opacity: 1 !important;
-          transform: scale(2.5) translate(0, 0) !important;
-          transform-origin: 50% 50% !important;
           background: #22c55e !important;
           border-color: #ffffff !important;
           box-shadow: 0 0 16px rgba(34, 197, 94, 1) !important;
@@ -760,10 +755,8 @@ export default function EntregaFlowCanvas({
           opacity: 1 !important;
         }
 
-        /* Hover direto no handle quando já visível */
+        /* Sem hover scale - apenas aparece */
         .react-flow__handle:hover {
-          transform: scale(1.3) translate(0, 0) !important;
-          transform-origin: 50% 50% !important;
           box-shadow: 0 0 10px rgba(255, 255, 255, 0.8) !important;
         }
       `}</style>
