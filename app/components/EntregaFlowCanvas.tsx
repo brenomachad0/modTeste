@@ -412,7 +412,7 @@ export default function EntregaFlowCanvas({
           target: targetNodeId,
           type: 'default',
           animated: true,
-          style: { stroke: '#374151', strokeWidth: 1.5 }, // Cinza (gray-700) e mais fino
+          style: { stroke: '#374151', strokeWidth: 2 }, // Cinza (gray-700) - 2px
           markerEnd: {
             type: MarkerType.ArrowClosed,
             color: '#ffffff', // Seta branca
@@ -528,7 +528,7 @@ export default function EntregaFlowCanvas({
         ...params,
         type: 'default',
         animated: true,
-        style: { stroke: '#374151', strokeWidth: 1.5 }, // Cinza (gray-700) e mais fino
+        style: { stroke: '#374151', strokeWidth: 2 }, // Cinza (gray-700) - 2px
         markerEnd: {
           type: MarkerType.ArrowClosed,
           color: '#ffffff', // Seta branca
@@ -687,18 +687,18 @@ export default function EntregaFlowCanvas({
       <style jsx global>{`
         .react-flow__edge-path {
           cursor: pointer !important;
-          stroke-width: 1.5 !important;
+          stroke-width: 2 !important;
           stroke: #374151 !important;
         }
 
         .react-flow__edge-path:hover {
           stroke: #a855f7 !important;
-          stroke-width: 2 !important;
+          stroke-width: 2.5 !important;
         }
 
         .react-flow__edge.selected .react-flow__edge-path {
           stroke: #a855f7 !important;
-          stroke-width: 2 !important;
+          stroke-width: 2.5 !important;
         }
 
         /* Setas (markers) brancas */
