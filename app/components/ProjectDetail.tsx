@@ -11,6 +11,8 @@ import {
 import LottieIcon from './LottieIcon';
 import ProjectTabs from './ProjectTabs';
 import EntregaFlowCanvas from './EntregaFlowCanvas';
+import NovaCompraModal from './NovaCompraModal';
+import NovoReembolsoModal from './NovoReembolsoModal';
 import { useIsDesktop } from '../hooks/useMediaQuery';
 import { mockFornecedores, mockBeneficiarios, type Fornecedor, type Beneficiario } from '../../data/mockData';
 import { mandrillApi } from '../../lib/mandrill-api';
@@ -1503,6 +1505,8 @@ export default function ProjectDetail({
   const [expanded, setExpanded] = useState(true);
   const [showContractingModal, setShowContractingModal] = useState(false);
   const [showPurchaseModal, setShowPurchaseModal] = useState(false);
+  const [showNovaCompraModal, setShowNovaCompraModal] = useState(false);
+  const [showNovoReembolsoModal, setShowNovoReembolsoModal] = useState(false);
   const [showInsumoModal, setShowInsumoModal] = useState(false);
   const [showInformacoesModal, setShowInformacoesModal] = useState(false);
   
@@ -2023,7 +2027,8 @@ export default function ProjectDetail({
               project={project}
               onAddInfo={() => setShowInformacoesModal(true)}
               onAddTeam={() => setShowContractingModal(true)}
-              onAddPurchase={() => setShowPurchaseModal(true)}
+              onAddPurchase={() => setShowNovaCompraModal(true)}
+              onAddReembolso={() => setShowNovoReembolsoModal(true)}
               onAddFile={() => setShowInsumoModal(true)}
             />
           </div>
@@ -2082,6 +2087,50 @@ export default function ProjectDetail({
             onRefresh();
           }
         }}
+      />
+
+      {/* Modal de Nova Compra */}
+      <NovaCompraModal
+        isOpen={showNovaCompraModal}
+        onClose={() => setShowNovaCompraModal(false)}
+        onSubmit={(compra) => {
+          console.log('Nova compra:', compra);
+          // TODO: Integrar com API para salvar compra
+          setShowNovaCompraModal(false);
+          if (onRefresh) {
+            onRefresh();
+          }
+        }}
+        beneficiariosExistentes={mockBeneficiarios.map(b => ({
+          nome: b.nome,
+          cpf_cnpj: b.cpfCnpj,
+          email: b.email,
+          telefone: b.telefone,
+          pix_chave: b.chavePix,
+          pix_tipo: b.tipoChavePix as 'cpf' | 'cnpj' | 'email' | 'telefone' | 'aleatoria',
+        }))}
+      />
+
+      {/* Modal de Novo Reembolso */}
+      <NovoReembolsoModal
+        isOpen={showNovoReembolsoModal}
+        onClose={() => setShowNovoReembolsoModal(false)}
+        onSubmit={(reembolso) => {
+          console.log('Novo reembolso:', reembolso);
+          // TODO: Integrar com API para salvar reembolso
+          setShowNovoReembolsoModal(false);
+          if (onRefresh) {
+            onRefresh();
+          }
+        }}
+        beneficiariosExistentes={mockBeneficiarios.map(b => ({
+          nome: b.nome,
+          cpf_cnpj: b.cpfCnpj,
+          email: b.email,
+          telefone: b.telefone,
+          pix_chave: b.chavePix,
+          pix_tipo: b.tipoChavePix as 'cpf' | 'cnpj' | 'email' | 'telefone' | 'aleatoria',
+        }))}
       />
 
       {/* Modal de Insumo */}

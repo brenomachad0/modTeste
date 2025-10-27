@@ -28,6 +28,7 @@ interface ProjectTabsProps {
   onAddInfo: () => void;
   onAddTeam?: () => void;
   onAddPurchase?: () => void;
+  onAddReembolso?: () => void;
   onAddFile?: () => void;
 }
 
@@ -38,6 +39,7 @@ export default function ProjectTabs({
   onAddInfo,
   onAddTeam,
   onAddPurchase,
+  onAddReembolso,
   onAddFile,
 }: ProjectTabsProps) {
   const [activeTab, setActiveTab] = useState<TabType>('informacoes');
@@ -245,6 +247,12 @@ export default function ProjectTabs({
                     if (onAddPurchase) {
                       onAddPurchase();
                       // Recarregar compras após fechar modal (delay para dar tempo de salvar)
+                      setTimeout(() => buscarCompras(), 1000);
+                    }
+                  }}
+                  onAddReembolso={() => {
+                    if (onAddReembolso) {
+                      onAddReembolso();
                       setTimeout(() => buscarCompras(), 1000);
                     }
                   }}

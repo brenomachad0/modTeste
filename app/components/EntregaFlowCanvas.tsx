@@ -172,7 +172,6 @@ const EntregaNode = ({ data, selected }: any) => {
       {/* Card do Node */}
       <div 
         className={`relative bg-gray-800 border-2 rounded-xl w-[90px] h-[90px] shadow-lg transition-all cursor-pointer ${borderStyle} hover:border-purple-400 hover:shadow-xl hover:scale-105`}
-        onClick={() => data.onEntregaClick?.(data.id)}
       >
         {/* Selo de Status - Canto superior direito */}
         <div className={`absolute -top-1 -right-1 w-3 h-3 rounded-full ${statusInfo.color} border-2 border-gray-900`} 
@@ -273,10 +272,6 @@ export default function EntregaFlowCanvas({
       return [];
     }
     
-    console.group('🎨 [ENTREGA FLOW] Criando Nodes');
-    console.log('📊 Boards disponíveis:', boardData.length);
-    console.log('🔧 Entregas a processar:', entregas.length);
-    
     const canvasCenterX = 300;
     const canvasCenterY = 150;
     const horizontalSpacing = 180; // Menor espaçamento para cards compactos
@@ -309,8 +304,6 @@ export default function EntregaFlowCanvas({
       targetPosition: Position.Left,
     });
     
-    console.log(`✅ Nó de Início: Orçamento Aprovado pos=(${posicaoInicio.x},${posicaoInicio.y})`);
-    
     // 🔥 2. CRIAR NODES DAS ENTREGAS
     entregas.forEach((entrega, index) => {
       // Buscar posição salva do board
@@ -328,8 +321,6 @@ export default function EntregaFlowCanvas({
         isSelected: false,
         isSystemNode: false,
       };
-      
-      console.log(`✅ Entrega ${entrega.nome}: pos=(${position.x},${position.y})`);
       
       allNodes.push({
         id: entrega.id,
@@ -367,21 +358,15 @@ export default function EntregaFlowCanvas({
       targetPosition: Position.Left,
     });
     
-    console.log(`✅ Nó de Fim: Job Aprovado pos=(${posicaoFim.x},${posicaoFim.y})`);
-    console.log(`✅ Total de nodes criados: ${allNodes.length}`);
-    console.groupEnd();
-    
     return allNodes;
   }, [entregas, boardData, onEntregaClick]);
   
   // Criar edges baseado em board_next
   const initialEdges = React.useMemo(() => {
-    console.group('🔗 [ENTREGA FLOW] Criando Edges');
     const edgesArray: Edge[] = [];
     
     boardData.forEach((board: any) => {
       if (!board.board_next || board.board_next.length === 0) {
-        console.log(`⏭️  Board ${board.board_tipo || board.board_entidade} sem board_next, pulando...`);
         return;
       }
       
@@ -397,13 +382,10 @@ export default function EntregaFlowCanvas({
       }
       
       if (!sourceId) {
-        console.warn('⚠️  Board sem ID válido:', board);
         return;
       }
       
       const targetNodeIds = Array.isArray(board.board_next) ? board.board_next : [];
-      
-      console.log(`📍 Board ${board.board_tipo || board.board_entidade}: ${sourceId.substring(0, 20)}... → [${targetNodeIds.map((t: string) => t.substring(0, 12) + '...').join(', ')}]`);
       
       targetNodeIds.forEach((targetNodeId: string) => {
         edgesArray.push({
@@ -418,13 +400,8 @@ export default function EntregaFlowCanvas({
             color: '#ffffff', // Seta branca
           },
         });
-        
-        console.log(`  ✅ Edge: ${sourceId.substring(0, 20)}... → ${targetNodeId.substring(0, 12)}...`);
       });
     });
-    
-    console.log(`✅ Total de edges criadas: ${edgesArray.length}`);
-    console.groupEnd();
     
     return edgesArray;
   }, [boardData]);
@@ -545,6 +522,18 @@ export default function EntregaFlowCanvas({
     setEdgeToDelete(edge);
   }, []);
 
+  const onNodeDoubleClick = useCallback((event: React.MouseEvent, node: Node) => {
+    // Não fazer nada se for um nó de sistema
+    if (node.data.isSystemNode) {
+      return;
+    }
+    
+    // Chamar callback de clique duplo na entrega
+    if (onEntregaClick) {
+      onEntregaClick(node.data.id);
+    }
+  }, [onEntregaClick]);
+
   const confirmDeleteEdge = useCallback(() => {
     if (edgeToDelete) {
       setEdges((eds) => eds.filter((e) => e.id !== edgeToDelete.id));
@@ -561,7 +550,6 @@ export default function EntregaFlowCanvas({
     if (onSaveFlow) {
       onSaveFlow(nodes, edges);
       setHasChanges(false);
-      console.log('✅ Fluxo de entregas salvo');
     }
   }, [nodes, edges, onSaveFlow]);
 
@@ -570,13 +558,11 @@ export default function EntregaFlowCanvas({
       onCancelFlow();
       
       if (originalDataRef.current) {
-        console.log('🔄 Restaurando dados originais');
         setNodes(initialNodes);
         setEdges(initialEdges);
       }
       
       setHasChanges(false);
-      console.log('❌ Edição cancelada');
     }
   }, [onCancelFlow, initialNodes, initialEdges, setNodes, setEdges]);
 
@@ -653,6 +639,7 @@ export default function EntregaFlowCanvas({
         onEdgesChange={handleEdgesChange}
         onConnect={onConnect}
         onEdgeClick={onEdgeClick}
+        onNodeDoubleClick={onNodeDoubleClick}
         nodeTypes={nodeTypes}
         className="bg-gray-900 react-flow-dark"
         onMoveStart={handleMoveStart}

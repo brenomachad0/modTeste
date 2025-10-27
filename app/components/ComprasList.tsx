@@ -5,7 +5,7 @@
 
 'use client';
 
-import { DollarSign, Calendar, User, FileText, CheckCircle, Clock } from 'lucide-react';
+import { DollarSign, Calendar, User, FileText, CheckCircle, Clock, Upload, AlertCircle, RefreshCw } from 'lucide-react';
 
 interface Compra {
   compra_id: string;
@@ -35,14 +35,19 @@ interface Compra {
   compra_demanda_codigo: string;
   compra_created_at: string;
   compra_created_pessoa: string;
+  compra_comprovante?: string; // URL do comprovante
+  compra_tem_comprovante?: boolean; // Flag se já foi enviado
+  compra_tipo?: 'compra' | 'reembolso'; // Tipo da compra
 }
 
 interface ComprasListProps {
   compras: Compra[];
   onAddCompra: () => void;
+  onAddReembolso: () => void;
+  onCompraClick?: (compra: Compra) => void;
 }
 
-export default function ComprasList({ compras, onAddCompra }: ComprasListProps) {
+export default function ComprasList({ compras, onAddCompra, onAddReembolso, onCompraClick }: ComprasListProps) {
   const formatarData = (dataStr: string) => {
     try {
       const data = new Date(dataStr);
@@ -90,32 +95,52 @@ export default function ComprasList({ compras, onAddCompra }: ComprasListProps) 
       <div className="text-center py-8">
         <DollarSign className="w-10 h-10 text-gray-600 mx-auto mb-2" />
         <h4 className="text-white text-sm font-medium mb-1">Nenhuma compra registrada</h4>
-        <p className="text-gray-400 text-xs mb-3">
-          Registre as compras relacionadas a este projeto
+        <p className="text-gray-400 text-xs mb-4">
+          Registre as compras e reembolsos relacionados a este projeto
         </p>
-        <button
-          onClick={onAddCompra}
-          className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded-lg transition-colors"
-        >
-          Nova Compra
-        </button>
+        <div className="flex items-center justify-center gap-2">
+          <button
+            onClick={onAddCompra}
+            className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs rounded-lg transition-colors flex items-center gap-1"
+          >
+            <DollarSign className="w-3 h-3" />
+            Nova Compra
+          </button>
+          <button
+            onClick={onAddReembolso}
+            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded-lg transition-colors flex items-center gap-1"
+          >
+            <RefreshCw className="w-3 h-3" />
+            Novo Reembolso
+          </button>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="space-y-3">
-      {/* Header com botão de adicionar */}
+      {/* Header com botões de adicionar */}
       <div className="flex items-center justify-between mb-2">
         <h4 className="text-xs font-medium text-gray-400 uppercase tracking-wider">
           Compras Registradas ({compras.length})
         </h4>
-        <button
-          onClick={onAddCompra}
-          className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded transition-colors"
-        >
-          + Nova
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onAddCompra}
+            className="px-2 py-1 bg-green-600 hover:bg-green-700 text-white text-xs rounded transition-colors flex items-center gap-1"
+          >
+            <DollarSign className="w-3 h-3" />
+            Nova Compra
+          </button>
+          <button
+            onClick={onAddReembolso}
+            className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded transition-colors flex items-center gap-1"
+          >
+            <RefreshCw className="w-3 h-3" />
+            Reembolso
+          </button>
+        </div>
       </div>
 
       {/* Lista de compras */}
@@ -123,59 +148,58 @@ export default function ComprasList({ compras, onAddCompra }: ComprasListProps) 
         {compras.map((compra) => (
           <div
             key={compra.compra_id}
-            className="bg-gray-700/30 border border-gray-600 rounded-lg p-3 hover:bg-gray-700/50 transition-colors"
+            onClick={() => onCompraClick?.(compra)}
+            className="bg-gray-700/30 border border-gray-600 rounded-lg p-3 hover:bg-gray-700/50 transition-colors cursor-pointer"
           >
-            {/* Linha 1: Beneficiário e Status */}
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2">
-                <User className="w-4 h-4 text-blue-400" />
-                <span className="text-sm font-medium text-white">
-                  {compra.compra_beneficiario_nome}
-                </span>
+            {/* Linha 1: Descrição e Badge de Reembolso */}
+            <div className="flex items-start justify-between mb-2">
+              <div className="flex items-center gap-2 flex-1">
+                <FileText className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                <p className="text-sm text-white font-medium line-clamp-1">
+                  {compra.compra_descricao || 'Sem descrição'}
+                </p>
+                {compra.compra_tipo === 'reembolso' && (
+                  <span className="px-1.5 py-0.5 bg-blue-500/10 text-blue-400 rounded text-[9px] font-medium flex-shrink-0">
+                    REEMBOLSO
+                  </span>
+                )}
               </div>
-              <span className={`px-2 py-0.5 text-[10px] font-medium rounded-full ${getStatusColor(compra.compra_status)}`}>
-                {getStatusLabel(compra.compra_status)}
-              </span>
             </div>
 
-            {/* Linha 2: Descrição */}
-            <div className="flex items-start gap-2 mb-2">
-              <FileText className="w-3 h-3 text-gray-400 mt-0.5 flex-shrink-0" />
-              <p className="text-xs text-gray-300 line-clamp-2">
-                {compra.compra_descricao}
-              </p>
-            </div>
-
-            {/* Linha 3: Pagamento e Valor */}
+            {/* Linha 2: Beneficiário, Data | Status, Valor */}
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3 text-xs text-gray-400">
+              {/* Esquerda: Beneficiário e Data */}
+              <div className="flex items-center gap-3 text-xs text-gray-300">
                 <div className="flex items-center gap-1">
+                  <User className="w-3 h-3 text-blue-400" />
+                  <span className="font-medium">{compra.compra_beneficiario_nome}</span>
+                </div>
+                <div className="flex items-center gap-1 text-gray-400">
                   <Calendar className="w-3 h-3" />
                   <span>{formatarData(compra.compra_data_pagamento)}</span>
                 </div>
-                <div className="flex items-center gap-1">
-                  <span className="px-1.5 py-0.5 bg-purple-500/10 text-purple-400 rounded text-[10px]">
-                    {compra.compra_meio_pagamento?.meio_pagamento_nome || 'PIX'}
-                  </span>
-                </div>
               </div>
-              <span className="text-sm font-bold text-green-400">
-                {formatarValor(compra.compra_valor)}
-              </span>
-            </div>
 
-            {/* Chave PIX (se existir) */}
-            {compra.compra_pix_chave && (
-              <div className="mt-2 pt-2 border-t border-gray-600">
-                <div className="flex items-center gap-2 text-xs text-gray-400">
-                  <span className="font-medium">PIX:</span>
-                  <span className="font-mono">{compra.compra_pix_chave}</span>
-                  <span className="px-1 py-0.5 bg-gray-600 rounded text-[9px]">
-                    {compra.compra_pix_tipo}
-                  </span>
-                </div>
+              {/* Direita: Status de Comprovante, Status de Pagamento e Valor */}
+              <div className="flex items-center gap-2">
+                {/* Status de comprovante */}
+                {compra.compra_tem_comprovante ? (
+                  <CheckCircle className="w-4 h-4 text-green-400" />
+                ) : (
+                  <AlertCircle className="w-4 h-4 text-yellow-400" />
+                )}
+                
+                {/* Status de pagamento */}
+                <span className={`px-2 py-0.5 text-[10px] font-medium rounded-full ${getStatusColor(compra.compra_status)}`}>
+                  {getStatusLabel(compra.compra_status)}
+                </span>
+
+                {/* Valor */}
+                <span className="text-sm font-bold text-green-400 ml-1">
+                  {formatarValor(compra.compra_valor)}
+                </span>
               </div>
-            )}
+            </div>
           </div>
         ))}
       </div>
