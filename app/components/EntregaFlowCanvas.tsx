@@ -96,14 +96,12 @@ const EntregaNode = ({ data, selected }: any) => {
 
   // Estilo de warning se não tiver conexões
   let borderStyle = 'border-gray-700';
-  let systemBorderColor = 'border-purple-500';
+  let systemBorderColor = 'border-gray-700'; // Padrão: cinza claro como entregas
   
   if (isSystemNode) {
-    // Nós de sistema: verde se conectado, vermelho se não
-    if (data.connectionStatus === 'system-connected') {
-      systemBorderColor = 'border-green-500';
-    } else if (data.connectionStatus === 'system-disconnected') {
-      systemBorderColor = 'border-red-500';
+    // Nós de sistema: cinza claro se conectado, vermelho se desconectado
+    if (data.connectionStatus === 'system-disconnected') {
+      systemBorderColor = 'border-red-500'; // Só fica vermelho se NÃO conectado
     }
   } else {
     // Nós normais
@@ -414,10 +412,10 @@ export default function EntregaFlowCanvas({
           target: targetNodeId,
           type: 'default',
           animated: true,
-          style: { stroke: '#ec4899', strokeWidth: 3 }, // Rosa
+          style: { stroke: '#ffffff', strokeWidth: 2 }, // Branco e mais fino
           markerEnd: {
             type: MarkerType.ArrowClosed,
-            color: '#ec4899',
+            color: '#ffffff',
           },
         });
         
@@ -530,10 +528,10 @@ export default function EntregaFlowCanvas({
         ...params,
         type: 'default',
         animated: true,
-        style: { stroke: '#ec4899', strokeWidth: 3 },
+        style: { stroke: '#ffffff', strokeWidth: 2 }, // Branco e mais fino
         markerEnd: {
           type: MarkerType.ArrowClosed,
-          color: '#ec4899',
+          color: '#ffffff',
         },
       };
       setEdges((eds) => addEdge(newEdge, eds));
@@ -689,17 +687,17 @@ export default function EntregaFlowCanvas({
       <style jsx global>{`
         .react-flow__edge-path {
           cursor: pointer !important;
-          stroke-width: 3 !important;
+          stroke-width: 2 !important;
         }
 
         .react-flow__edge-path:hover {
-          stroke: #f472b6 !important;
-          stroke-width: 4 !important;
+          stroke: #a855f7 !important;
+          stroke-width: 3 !important;
         }
 
         .react-flow__edge.selected .react-flow__edge-path {
-          stroke: #f472b6 !important;
-          stroke-width: 4 !important;
+          stroke: #a855f7 !important;
+          stroke-width: 3 !important;
         }
 
         .react-flow__handle {
