@@ -683,11 +683,12 @@ export default function EntregaFlowCanvas({
         )}
       </ReactFlow>
       
-      {/* Estilos customizados */}
+      /* Estilos customizados */
       <style jsx global>{`
         .react-flow__edge-path {
           cursor: pointer !important;
           stroke-width: 2 !important;
+          stroke: #ffffff !important;
         }
 
         .react-flow__edge-path:hover {
@@ -698,6 +699,20 @@ export default function EntregaFlowCanvas({
         .react-flow__edge.selected .react-flow__edge-path {
           stroke: #a855f7 !important;
           stroke-width: 3 !important;
+        }
+
+        /* Setas (markers) também brancas */
+        .react-flow__arrowhead,
+        .react-flow__edge marker path {
+          fill: #ffffff !important;
+          stroke: #ffffff !important;
+        }
+
+        /* Setas roxas no hover */
+        .react-flow__edge:hover marker path,
+        .react-flow__edge.selected marker path {
+          fill: #a855f7 !important;
+          stroke: #a855f7 !important;
         }
 
         .react-flow__handle {
