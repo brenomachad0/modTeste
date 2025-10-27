@@ -117,7 +117,7 @@ const EntregaNode = ({ data, selected }: any) => {
   // 🎨 Renderização para nós de sistema (formato "C" e "D")
   if (isSystemNode) {
     return (
-      <div className="flex flex-col items-center">
+      <div className="flex flex-col items-center group">
         <div 
           className={`relative bg-gray-800 border-2 w-[90px] h-[90px] shadow-lg transition-all ${systemBorderColor}`}
           style={{
@@ -133,8 +133,8 @@ const EntregaNode = ({ data, selected }: any) => {
             <Handle
               type="target"
               position={Position.Left}
-              className="w-2 h-2 !bg-pink-500 !border-2 !border-white opacity-0"
-              style={{ left: -4 }}
+              className="w-4 h-4 !bg-pink-500 !border-2 !border-white opacity-0 group-hover:opacity-100 transition-opacity"
+              style={{ left: -8 }}
             />
           )}
           
@@ -143,8 +143,8 @@ const EntregaNode = ({ data, selected }: any) => {
             <Handle
               type="source"
               position={Position.Right}
-              className="w-2 h-2 !bg-purple-500 !border-2 !border-white"
-              style={{ right: -4 }}
+              className="w-4 h-4 !bg-purple-500 !border-2 !border-white opacity-0 group-hover:opacity-100 transition-opacity"
+              style={{ right: -8 }}
             />
           )}
 
@@ -170,7 +170,7 @@ const EntregaNode = ({ data, selected }: any) => {
 
   // 🎨 Renderização normal para entregas
   return (
-    <div className="flex flex-col items-center">
+    <div className="flex flex-col items-center group">
       {/* Card do Node */}
       <div 
         className={`relative bg-gray-800 border-2 rounded-xl w-[90px] h-[90px] shadow-lg transition-all cursor-pointer ${borderStyle} hover:border-purple-400 hover:shadow-xl hover:scale-105`}
@@ -180,20 +180,20 @@ const EntregaNode = ({ data, selected }: any) => {
         <div className={`absolute -top-1 -right-1 w-3 h-3 rounded-full ${statusInfo.color} border-2 border-gray-900`} 
              title={data.status} />
 
-        {/* Handle de Entrada (esquerda) - Invisível, mas aparece no hover quando conectando */}
+        {/* Handle de Entrada (esquerda) - Invisível, aparece no hover do nó ou quando conectando */}
         <Handle
           type="target"
           position={Position.Left}
-          className="w-2 h-2 !bg-pink-500 !border-2 !border-white opacity-0"
-          style={{ left: -4 }}
+          className="w-4 h-4 !bg-pink-500 !border-2 !border-white opacity-0 group-hover:opacity-100 transition-opacity"
+          style={{ left: -8 }}
         />
         
-        {/* Handle de Saída (direita) - Visível para puxar conexões */}
+        {/* Handle de Saída (direita) - Invisível, aparece apenas no hover do nó */}
         <Handle
           type="source"
           position={Position.Right}
-          className="w-2 h-2 !bg-purple-500 !border-2 !border-white"
-          style={{ right: -4 }}
+          className="w-4 h-4 !bg-purple-500 !border-2 !border-white opacity-0 group-hover:opacity-100 transition-opacity"
+          style={{ right: -8 }}
         />
 
         {/* Ícone da Entrega - Centralizado */}
@@ -703,42 +703,45 @@ export default function EntregaFlowCanvas({
         }
 
         .react-flow__handle {
-          width: 8px !important;
-          height: 8px !important;
+          width: 16px !important;
+          height: 16px !important;
           border-radius: 50% !important;
           transition: all 0.2s ease !important;
         }
 
-        /* Handle de saída sempre visível */
+        /* Handles invisíveis por padrão (sobrescreve group-hover quando necessário) */
+        .react-flow__handle-left,
         .react-flow__handle-right {
-          opacity: 1 !important;
-        }
-
-        /* Handle de entrada invisível por padrão */
-        .react-flow__handle-left {
           opacity: 0 !important;
         }
 
-        /* Quando estiver conectando, mostrar os handles de destino */
+        /* Quando estiver conectando, mostrar TODOS os handles de destino */
         .react-flow__handle-connecting {
           opacity: 1 !important;
           transform: scale(1.5) !important;
           background: #a855f7 !important;
-          box-shadow: 0 0 10px rgba(168, 85, 247, 0.8) !important;
+          box-shadow: 0 0 12px rgba(168, 85, 247, 0.9) !important;
+          z-index: 10 !important;
         }
 
-        /* Quando a conexão for válida, handle fica verde */
+        /* Quando a conexão for válida, handle fica VERDE e GRANDE */
         .react-flow__handle-valid {
           opacity: 1 !important;
-          transform: scale(2) !important;
+          transform: scale(2.5) !important;
           background: #22c55e !important;
-          box-shadow: 0 0 12px rgba(34, 197, 94, 1) !important;
+          box-shadow: 0 0 16px rgba(34, 197, 94, 1) !important;
+          z-index: 10 !important;
         }
 
-        /* Hover no handle de saída */
-        .react-flow__handle-right:hover {
-          transform: scale(1.5) !important;
-          box-shadow: 0 0 8px rgba(168, 85, 247, 0.8) !important;
+        /* Mostrar handles no hover do grupo (nó) */
+        .group:hover .react-flow__handle {
+          opacity: 1 !important;
+        }
+
+        /* Hover direto no handle quando já visível */
+        .react-flow__handle:hover {
+          transform: scale(1.3) !important;
+          box-shadow: 0 0 10px rgba(168, 85, 247, 0.8) !important;
         }
       `}</style>
     </div>
