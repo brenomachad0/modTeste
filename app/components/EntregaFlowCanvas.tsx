@@ -109,20 +109,20 @@ const EntregaNode = ({ data, selected }: any) => {
         <div className={`absolute -top-1 -right-1 w-3 h-3 rounded-full ${statusInfo.color} border-2 border-gray-900`} 
              title={data.status} />
 
-        {/* Handle de Entrada (esquerda) */}
+        {/* Handle de Entrada (esquerda) - Invisível, mas aparece no hover quando conectando */}
         <Handle
           type="target"
           position={Position.Left}
-          className="w-1 h-1 !bg-pink-500 !border !border-white"
-          style={{ left: -2 }}
+          className="w-2 h-2 !bg-pink-500 !border-2 !border-white opacity-0"
+          style={{ left: -4 }}
         />
         
-        {/* Handle de Saída (direita) */}
+        {/* Handle de Saída (direita) - Visível para puxar conexões */}
         <Handle
           type="source"
           position={Position.Right}
-          className="w-1 h-1 !bg-purple-500 !border !border-white"
-          style={{ right: -2 }}
+          className="w-2 h-2 !bg-purple-500 !border-2 !border-white"
+          style={{ right: -4 }}
         />
 
         {/* Ícone da Entrega - Centralizado */}
@@ -538,23 +538,42 @@ export default function EntregaFlowCanvas({
         }
 
         .react-flow__handle {
-          width: 4px !important;
-          height: 4px !important;
+          width: 8px !important;
+          height: 8px !important;
           border-radius: 50% !important;
           transition: all 0.2s ease !important;
         }
 
-        .react-flow__handle:hover {
-          transform: scale(2) !important;
-          box-shadow: 0 0 6px rgba(236, 72, 153, 0.6) !important;
+        /* Handle de saída sempre visível */
+        .react-flow__handle-right {
+          opacity: 1 !important;
         }
 
+        /* Handle de entrada invisível por padrão */
+        .react-flow__handle-left {
+          opacity: 0 !important;
+        }
+
+        /* Quando estiver conectando, mostrar os handles de destino */
         .react-flow__handle-connecting {
-          background: #ec4899 !important;
+          opacity: 1 !important;
+          transform: scale(1.5) !important;
+          background: #a855f7 !important;
+          box-shadow: 0 0 10px rgba(168, 85, 247, 0.8) !important;
         }
 
+        /* Quando a conexão for válida, handle fica verde */
         .react-flow__handle-valid {
+          opacity: 1 !important;
+          transform: scale(2) !important;
           background: #22c55e !important;
+          box-shadow: 0 0 12px rgba(34, 197, 94, 1) !important;
+        }
+
+        /* Hover no handle de saída */
+        .react-flow__handle-right:hover {
+          transform: scale(1.5) !important;
+          box-shadow: 0 0 8px rgba(168, 85, 247, 0.8) !important;
         }
       `}</style>
     </div>
