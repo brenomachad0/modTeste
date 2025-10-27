@@ -131,7 +131,7 @@ const EntregaNode = ({ data, selected }: any) => {
             <Handle
               type="target"
               position={Position.Left}
-              className="w-4 h-4 !bg-pink-500 !border-2 !border-white opacity-0 group-hover:opacity-100 transition-opacity"
+              className="w-4 h-4 !bg-white !border-2 !border-gray-900 opacity-0 group-hover:opacity-100 transition-opacity"
               style={{ left: -8 }}
             />
           )}
@@ -141,7 +141,7 @@ const EntregaNode = ({ data, selected }: any) => {
             <Handle
               type="source"
               position={Position.Right}
-              className="w-4 h-4 !bg-purple-500 !border-2 !border-white opacity-0 group-hover:opacity-100 transition-opacity"
+              className="w-4 h-4 !bg-white !border-2 !border-gray-900 opacity-0 group-hover:opacity-100 transition-opacity"
               style={{ right: -8 }}
             />
           )}
@@ -182,7 +182,7 @@ const EntregaNode = ({ data, selected }: any) => {
         <Handle
           type="target"
           position={Position.Left}
-          className="w-4 h-4 !bg-pink-500 !border-2 !border-white opacity-0 group-hover:opacity-100 transition-opacity"
+          className="w-4 h-4 !bg-white !border-2 !border-gray-900 opacity-0 group-hover:opacity-100 transition-opacity"
           style={{ left: -8 }}
         />
         
@@ -190,7 +190,7 @@ const EntregaNode = ({ data, selected }: any) => {
         <Handle
           type="source"
           position={Position.Right}
-          className="w-4 h-4 !bg-purple-500 !border-2 !border-white opacity-0 group-hover:opacity-100 transition-opacity"
+          className="w-4 h-4 !bg-white !border-2 !border-gray-900 opacity-0 group-hover:opacity-100 transition-opacity"
           style={{ right: -8 }}
         />
 
@@ -412,10 +412,10 @@ export default function EntregaFlowCanvas({
           target: targetNodeId,
           type: 'default',
           animated: true,
-          style: { stroke: '#ffffff', strokeWidth: 2 }, // Branco e mais fino
+          style: { stroke: '#374151', strokeWidth: 1.5 }, // Cinza (gray-700) e mais fino
           markerEnd: {
             type: MarkerType.ArrowClosed,
-            color: '#ffffff',
+            color: '#ffffff', // Seta branca
           },
         });
         
@@ -528,10 +528,10 @@ export default function EntregaFlowCanvas({
         ...params,
         type: 'default',
         animated: true,
-        style: { stroke: '#ffffff', strokeWidth: 2 }, // Branco e mais fino
+        style: { stroke: '#374151', strokeWidth: 1.5 }, // Cinza (gray-700) e mais fino
         markerEnd: {
           type: MarkerType.ArrowClosed,
-          color: '#ffffff',
+          color: '#ffffff', // Seta branca
         },
       };
       setEdges((eds) => addEdge(newEdge, eds));
@@ -687,21 +687,21 @@ export default function EntregaFlowCanvas({
       <style jsx global>{`
         .react-flow__edge-path {
           cursor: pointer !important;
-          stroke-width: 2 !important;
-          stroke: #ffffff !important;
+          stroke-width: 1.5 !important;
+          stroke: #374151 !important;
         }
 
         .react-flow__edge-path:hover {
           stroke: #a855f7 !important;
-          stroke-width: 3 !important;
+          stroke-width: 2 !important;
         }
 
         .react-flow__edge.selected .react-flow__edge-path {
           stroke: #a855f7 !important;
-          stroke-width: 3 !important;
+          stroke-width: 2 !important;
         }
 
-        /* Setas (markers) também brancas */
+        /* Setas (markers) brancas */
         .react-flow__arrowhead,
         .react-flow__edge marker path {
           fill: #ffffff !important;
@@ -720,6 +720,9 @@ export default function EntregaFlowCanvas({
           height: 16px !important;
           border-radius: 50% !important;
           transition: all 0.2s ease !important;
+          background: #ffffff !important;
+          border: 2px solid #111827 !important;
+          transform-origin: center center !important;
         }
 
         /* Handles invisíveis por padrão (sobrescreve group-hover quando necessário) */
@@ -732,7 +735,8 @@ export default function EntregaFlowCanvas({
         .react-flow__handle-connecting {
           opacity: 1 !important;
           transform: scale(1.5) !important;
-          background: #a855f7 !important;
+          background: #ffffff !important;
+          border-color: #a855f7 !important;
           box-shadow: 0 0 12px rgba(168, 85, 247, 0.9) !important;
           z-index: 10 !important;
         }
@@ -742,6 +746,7 @@ export default function EntregaFlowCanvas({
           opacity: 1 !important;
           transform: scale(2.5) !important;
           background: #22c55e !important;
+          border-color: #ffffff !important;
           box-shadow: 0 0 16px rgba(34, 197, 94, 1) !important;
           z-index: 10 !important;
         }
@@ -754,7 +759,7 @@ export default function EntregaFlowCanvas({
         /* Hover direto no handle quando já visível */
         .react-flow__handle:hover {
           transform: scale(1.3) !important;
-          box-shadow: 0 0 10px rgba(168, 85, 247, 0.8) !important;
+          box-shadow: 0 0 10px rgba(255, 255, 255, 0.8) !important;
         }
       `}</style>
     </div>
