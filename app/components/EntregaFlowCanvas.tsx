@@ -40,7 +40,7 @@ interface EntregaFlowCanvasProps {
   projetoId: string;
 }
 
-// Componente customizado para os nodes de entrega (HEXAGONAL)
+// Componente customizado para os nodes de entrega (MINIMALISTA)
 const EntregaNode = ({ data, selected }: any) => {
   const progresso = data.progresso_percentual || 0;
 
@@ -48,44 +48,38 @@ const EntregaNode = ({ data, selected }: any) => {
     switch (status) {
       case 'concluida':
         return { 
-          color: 'from-green-600 to-green-400', 
-          icon: CheckCircle, 
-          label: 'Concluída',
+          color: 'bg-green-500', 
+          icon: CheckCircle,
           borderColor: 'border-green-500'
         };
       case 'executando':
         return { 
-          color: 'from-cyan-600 to-cyan-400', 
-          icon: Play, 
-          label: 'Em Execução',
+          color: 'bg-cyan-500', 
+          icon: Play,
           borderColor: 'border-cyan-500'
         };
       case 'atrasada':
         return { 
-          color: 'from-red-600 to-red-400', 
-          icon: AlertTriangle, 
-          label: 'Atrasada',
+          color: 'bg-red-500', 
+          icon: AlertTriangle,
           borderColor: 'border-red-500'
         };
       case 'pausada':
         return { 
-          color: 'from-yellow-600 to-yellow-400', 
-          icon: Clock, 
-          label: 'Pausada',
+          color: 'bg-yellow-500', 
+          icon: Clock,
           borderColor: 'border-yellow-500'
         };
       case 'proxima':
         return { 
-          color: 'from-blue-600 to-blue-400', 
-          icon: Clock, 
-          label: 'Próxima',
+          color: 'bg-blue-500', 
+          icon: Clock,
           borderColor: 'border-blue-500'
         };
       default: // planejamento ou planejada
         return { 
-          color: 'from-purple-600 to-pink-500', 
-          icon: Clock, 
-          label: 'Planejamento',
+          color: 'bg-purple-500', 
+          icon: Clock,
           borderColor: 'border-purple-500'
         };
     }
@@ -96,117 +90,62 @@ const EntregaNode = ({ data, selected }: any) => {
   const isSelected = data.isSelected || selected;
 
   // Estilo de warning se não tiver conexões
-  let borderStyle = statusInfo.borderColor;
-  let ringStyle = 'ring-purple-400/50';
+  let borderStyle = 'border-gray-700';
   
   if (data.connectionStatus === 'warning') {
     borderStyle = 'border-yellow-500';
-    ringStyle = 'ring-yellow-500/50';
   } else if (isSelected) {
-    ringStyle = `${statusInfo.borderColor.replace('border-', 'ring-')}/50`;
+    borderStyle = 'border-purple-500';
   }
 
   return (
-    <div 
-      className={`relative bg-gray-800 border-3 p-5 min-w-[260px] max-w-[260px] shadow-2xl transition-all cursor-pointer ${
-        isSelected 
-          ? `${borderStyle} ring-4 ${ringStyle} shadow-2xl shadow-purple-500/30` 
-          : `${borderStyle} hover:${borderStyle} hover:shadow-2xl hover:scale-105`
-      }`}
-      style={{
-        clipPath: 'polygon(30% 0%, 70% 0%, 100% 50%, 70% 100%, 30% 100%, 0% 50%)', // Hexágono
-        transition: 'all 0.3s ease',
-      }}
-      onClick={() => data.onEntregaClick?.(data.id)}
-    >
-      {/* Overlay gradiente de fundo */}
+    <div className="flex flex-col items-center">
+      {/* Card do Node */}
       <div 
-        className={`absolute inset-0 bg-gradient-to-br ${statusInfo.color} opacity-10`}
-        style={{
-          clipPath: 'polygon(30% 0%, 70% 0%, 100% 50%, 70% 100%, 30% 100%, 0% 50%)',
-        }}
-      />
+        className={`relative bg-gray-800 border-2 rounded-xl w-[90px] h-[90px] shadow-lg transition-all cursor-pointer ${borderStyle} hover:border-purple-400 hover:shadow-xl hover:scale-105`}
+        onClick={() => data.onEntregaClick?.(data.id)}
+      >
+        {/* Selo de Status - Canto superior direito */}
+        <div className={`absolute -top-1 -right-1 w-3 h-3 rounded-full ${statusInfo.color} border-2 border-gray-900`} 
+             title={data.status} />
 
-      {/* Handle de Entrada (esquerda) */}
-      <Handle
-        type="target"
-        position={Position.Left}
-        className="w-4 h-4 !bg-pink-500 !border-2 !border-white"
-        style={{ left: -8 }}
-      />
-      
-      {/* Handle de Saída (direita) */}
-      <Handle
-        type="source"
-        position={Position.Right}
-        className="w-4 h-4 !bg-purple-500 !border-2 !border-white"
-        style={{ right: -8 }}
-      />
+        {/* Handle de Entrada (esquerda) */}
+        <Handle
+          type="target"
+          position={Position.Left}
+          className="w-3 h-3 !bg-pink-500 !border-2 !border-white"
+          style={{ left: -6 }}
+        />
+        
+        {/* Handle de Saída (direita) */}
+        <Handle
+          type="source"
+          position={Position.Right}
+          className="w-3 h-3 !bg-purple-500 !border-2 !border-white"
+          style={{ right: -6 }}
+        />
 
-      {/* Conteúdo interno */}
-      <div className="relative z-10 text-center space-y-3">
-        {/* Ícone + Status */}
-        <div className="flex flex-col items-center gap-2">
-          <div className={`p-2 rounded-full bg-gradient-to-br ${statusInfo.color}`}>
-            <StatusIcon className="w-5 h-5 text-white" />
-          </div>
-          <span className={`text-xs font-bold px-2 py-1 rounded-full bg-gradient-to-r ${statusInfo.color} text-white`}>
-            {statusInfo.label}
-          </span>
+        {/* Ícone da Entrega - Centralizado */}
+        <div className="absolute inset-0 flex items-center justify-center">
+          <Package className="w-12 h-12 text-purple-400" />
         </div>
 
-        {/* Nome da Entrega */}
-        <h3 className="font-bold text-white text-base px-2 line-clamp-2">
+        {/* Barra de Progresso - Parte inferior */}
+        <div className="absolute bottom-2 left-2 right-2">
+          <div className="w-full h-1 bg-gray-700 rounded-full overflow-hidden">
+            <div 
+              className="h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-500"
+              style={{ width: `${progresso}%` }}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Título - Abaixo do card */}
+      <div className="mt-2 text-center max-w-[110px]">
+        <p className="text-xs font-medium text-white line-clamp-2">
           {data.nome}
-        </h3>
-
-        {/* Progress Bar Circular */}
-        <div className="flex items-center justify-center">
-          <div className="relative w-16 h-16">
-            {/* Background circle */}
-            <svg className="w-16 h-16 transform -rotate-90">
-              <circle
-                cx="32"
-                cy="32"
-                r="28"
-                stroke="currentColor"
-                strokeWidth="4"
-                fill="none"
-                className="text-gray-700"
-              />
-              {/* Progress circle */}
-              <circle
-                cx="32"
-                cy="32"
-                r="28"
-                stroke="url(#gradient)"
-                strokeWidth="4"
-                fill="none"
-                strokeDasharray={`${2 * Math.PI * 28}`}
-                strokeDashoffset={`${2 * Math.PI * 28 * (1 - progresso / 100)}`}
-                className="transition-all duration-500"
-              />
-              <defs>
-                <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" className="text-purple-500" stopColor="currentColor" />
-                  <stop offset="100%" className="text-pink-500" stopColor="currentColor" />
-                </linearGradient>
-              </defs>
-            </svg>
-            {/* Percentage text */}
-            <div className="absolute inset-0 flex items-center justify-center">
-              <span className="text-white font-bold text-sm">{progresso}%</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Valores (se disponível) */}
-        {data.quantidade_total && (
-          <div className="flex items-center justify-center gap-1 text-xs text-gray-400">
-            <Package className="w-3 h-3" />
-            <span>{data.quantidade_total} {data.quantidade_total > 1 ? 'itens' : 'item'}</span>
-          </div>
-        )}
+        </p>
       </div>
     </div>
   );
@@ -269,9 +208,9 @@ export default function EntregaFlowCanvas({
     console.log('📊 Boards disponíveis:', boardData.length);
     console.log('🔧 Entregas a processar:', entregas.length);
     
-    const canvasCenterX = 400;
-    const canvasCenterY = 200;
-    const horizontalSpacing = 350;
+    const canvasCenterX = 300;
+    const canvasCenterY = 150;
+    const horizontalSpacing = 180; // Menor espaçamento para cards compactos
     
     const allNodes: Node[] = entregas.map((entrega, index) => {
       // Buscar posição salva do board
