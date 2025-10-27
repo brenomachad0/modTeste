@@ -88,16 +88,87 @@ const EntregaNode = ({ data, selected }: any) => {
   const statusInfo = getStatusInfo(data.status);
   const StatusIcon = statusInfo.icon;
   const isSelected = data.isSelected || selected;
+  
+  // 🔥 Verificar se é nó de sistema (Orçamento Aprovado ou Job Aprovado)
+  const isSystemNode = data.isSystemNode;
+  const isInicio = data.boardType === 'orcamento_aprovado';
+  const isFim = data.boardType === 'job_aprovado';
 
   // Estilo de warning se não tiver conexões
   let borderStyle = 'border-gray-700';
+  let systemBorderColor = 'border-purple-500';
   
-  if (data.connectionStatus === 'warning') {
-    borderStyle = 'border-yellow-500';
-  } else if (isSelected) {
-    borderStyle = 'border-purple-500';
+  if (isSystemNode) {
+    // Nós de sistema: verde se conectado, vermelho se não
+    if (data.connectionStatus === 'system-connected') {
+      systemBorderColor = 'border-green-500';
+    } else if (data.connectionStatus === 'system-disconnected') {
+      systemBorderColor = 'border-red-500';
+    }
+  } else {
+    // Nós normais
+    if (data.connectionStatus === 'warning') {
+      borderStyle = 'border-yellow-500';
+    } else if (isSelected) {
+      borderStyle = 'border-purple-500';
+    }
   }
 
+  // 🎨 Renderização para nós de sistema (formato "C" e "D")
+  if (isSystemNode) {
+    return (
+      <div className="flex flex-col items-center">
+        <div 
+          className={`relative bg-gray-800 border-2 w-[90px] h-[90px] shadow-lg transition-all ${systemBorderColor}`}
+          style={{
+            borderRadius: isInicio 
+              ? '45px 12px 12px 45px' // C: circular esquerda, rounded direita
+              : isFim 
+              ? '12px 45px 45px 12px' // D: rounded esquerda, circular direita
+              : '12px'
+          }}
+        >
+          {/* Handle de Entrada - Apenas para Job Aprovado (fim) */}
+          {isFim && (
+            <Handle
+              type="target"
+              position={Position.Left}
+              className="w-2 h-2 !bg-pink-500 !border-2 !border-white opacity-0"
+              style={{ left: -4 }}
+            />
+          )}
+          
+          {/* Handle de Saída - Apenas para Orçamento Aprovado (início) */}
+          {isInicio && (
+            <Handle
+              type="source"
+              position={Position.Right}
+              className="w-2 h-2 !bg-purple-500 !border-2 !border-white"
+              style={{ right: -4 }}
+            />
+          )}
+
+          {/* Ícone centralizado */}
+          <div className="absolute inset-0 flex items-center justify-center">
+            {isInicio ? (
+              <CheckCircle className="w-12 h-12 text-green-400" />
+            ) : (
+              <CheckCircle className="w-12 h-12 text-blue-400" />
+            )}
+          </div>
+        </div>
+
+        {/* Título externo */}
+        <div className="mt-2 text-center max-w-[110px]">
+          <p className="text-xs font-bold text-white">
+            {data.nome}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // 🎨 Renderização normal para entregas
   return (
     <div className="flex flex-col items-center">
       {/* Card do Node */}
@@ -212,7 +283,38 @@ export default function EntregaFlowCanvas({
     const canvasCenterY = 150;
     const horizontalSpacing = 180; // Menor espaçamento para cards compactos
     
-    const allNodes: Node[] = entregas.map((entrega, index) => {
+    const allNodes: Node[] = [];
+    
+    // 🔥 1. CRIAR NÓ DE INÍCIO: "Orçamento Aprovado"
+    const boardInicio = boardData.find(
+      (b: any) => b.board_tipo === 'orcamento_aprovado' || b.board_entidade === 'orcamento_aprovado'
+    );
+    
+    const posicaoInicio = boardInicio
+      ? { x: Number(boardInicio.board_position_x), y: Number(boardInicio.board_position_y) }
+      : { x: 100, y: canvasCenterY };
+    
+    allNodes.push({
+      id: 'orcamento-aprovado-inicio',
+      type: 'entregaNode',
+      position: posicaoInicio,
+      data: {
+        id: 'orcamento-aprovado-inicio',
+        nome: 'Orçamento Aprovado',
+        status: 'concluida',
+        progresso_percentual: 100,
+        isSystemNode: true,
+        boardType: 'orcamento_aprovado',
+        connectionStatus: 'system-disconnected',
+      },
+      sourcePosition: Position.Right,
+      targetPosition: Position.Left,
+    });
+    
+    console.log(`✅ Nó de Início: Orçamento Aprovado pos=(${posicaoInicio.x},${posicaoInicio.y})`);
+    
+    // 🔥 2. CRIAR NODES DAS ENTREGAS
+    entregas.forEach((entrega, index) => {
       // Buscar posição salva do board
       const board = boardData.find(
         (b: any) => b.board_entidade === 'entrega' && b.board_entidade_id === entrega.id
@@ -226,20 +328,48 @@ export default function EntregaFlowCanvas({
         ...entrega,
         onEntregaClick,
         isSelected: false,
+        isSystemNode: false,
       };
       
       console.log(`✅ Entrega ${entrega.nome}: pos=(${position.x},${position.y})`);
       
-      return {
+      allNodes.push({
         id: entrega.id,
         type: 'entregaNode',
         position,
         data: nodeData,
         sourcePosition: Position.Right,
         targetPosition: Position.Left,
-      };
+      });
     });
     
+    // 🔥 3. CRIAR NÓ DE FIM: "Job Aprovado"
+    const boardFim = boardData.find(
+      (b: any) => b.board_tipo === 'job_aprovado' || b.board_entidade === 'job_aprovado'
+    );
+    
+    const posicaoFim = boardFim
+      ? { x: Number(boardFim.board_position_x), y: Number(boardFim.board_position_y) }
+      : { x: canvasCenterX + (entregas.length * horizontalSpacing) + 100, y: canvasCenterY };
+    
+    allNodes.push({
+      id: 'job-aprovado-fim',
+      type: 'entregaNode',
+      position: posicaoFim,
+      data: {
+        id: 'job-aprovado-fim',
+        nome: 'Job Aprovado',
+        status: 'planejada',
+        progresso_percentual: 0,
+        isSystemNode: true,
+        boardType: 'job_aprovado',
+        connectionStatus: 'system-disconnected',
+      },
+      sourcePosition: Position.Right,
+      targetPosition: Position.Left,
+    });
+    
+    console.log(`✅ Nó de Fim: Job Aprovado pos=(${posicaoFim.x},${posicaoFim.y})`);
     console.log(`✅ Total de nodes criados: ${allNodes.length}`);
     console.groupEnd();
     
@@ -252,13 +382,30 @@ export default function EntregaFlowCanvas({
     const edgesArray: Edge[] = [];
     
     boardData.forEach((board: any) => {
-      if (board.board_entidade !== 'entrega') return;
-      if (!board.board_next || board.board_next.length === 0) return;
+      if (!board.board_next || board.board_next.length === 0) {
+        console.log(`⏭️  Board ${board.board_tipo || board.board_entidade} sem board_next, pulando...`);
+        return;
+      }
       
-      const sourceId = board.board_entidade_id;
-      if (!sourceId) return;
+      // Determinar o sourceId baseado no tipo de board
+      let sourceId: string;
+      
+      if (board.board_tipo === 'orcamento_aprovado' || board.board_entidade === 'orcamento_aprovado') {
+        sourceId = 'orcamento-aprovado-inicio';
+      } else if (board.board_tipo === 'job_aprovado' || board.board_entidade === 'job_aprovado') {
+        sourceId = 'job-aprovado-fim';
+      } else {
+        sourceId = board.board_entidade_id || board.board_node_id;
+      }
+      
+      if (!sourceId) {
+        console.warn('⚠️  Board sem ID válido:', board);
+        return;
+      }
       
       const targetNodeIds = Array.isArray(board.board_next) ? board.board_next : [];
+      
+      console.log(`📍 Board ${board.board_tipo || board.board_entidade}: ${sourceId.substring(0, 20)}... → [${targetNodeIds.map((t: string) => t.substring(0, 12) + '...').join(', ')}]`);
       
       targetNodeIds.forEach((targetNodeId: string) => {
         edgesArray.push({
@@ -274,7 +421,7 @@ export default function EntregaFlowCanvas({
           },
         });
         
-        console.log(`  ✅ Edge: ${sourceId.substring(0, 12)}... → ${targetNodeId.substring(0, 12)}...`);
+        console.log(`  ✅ Edge: ${sourceId.substring(0, 20)}... → ${targetNodeId.substring(0, 12)}...`);
       });
     });
     
@@ -306,8 +453,26 @@ export default function EntregaFlowCanvas({
       nds.map((node) => {
         const hasIncoming = edges.some(e => e.target === node.id);
         const hasOutgoing = edges.some(e => e.source === node.id);
+        const isSystemNode = node.data.isSystemNode;
         
-        const connectionStatus = (!hasIncoming || !hasOutgoing) ? 'warning' : 'connected';
+        let connectionStatus = 'connected';
+        
+        if (isSystemNode) {
+          // Nós de sistema: verde se conectado, vermelho se não
+          const isInicio = node.data.boardType === 'orcamento_aprovado';
+          const isFim = node.data.boardType === 'job_aprovado';
+          
+          if (isInicio) {
+            connectionStatus = hasOutgoing ? 'system-connected' : 'system-disconnected';
+          } else if (isFim) {
+            connectionStatus = hasIncoming ? 'system-connected' : 'system-disconnected';
+          }
+        } else {
+          // Nós regulares (entregas): amarelo se sem entrada OU sem saída
+          if (!hasIncoming || !hasOutgoing) {
+            connectionStatus = 'warning';
+          }
+        }
         
         return {
           ...node,
