@@ -5,31 +5,37 @@
 
 'use client';
 
-import { useState } from 'react';
-import { X, User, DollarSign, Calendar, FileText, Upload } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { X, User, DollarSign, Calendar, FileText, Upload, Loader2 } from 'lucide-react';
+import { mandrillApi } from '@/lib/mandrill-api';
 
 interface Beneficiario {
-  nome: string;
-  cpf_cnpj?: string;
-  email?: string;
-  telefone?: string;
-  pix_chave?: string;
-  pix_tipo?: 'cpf' | 'cnpj' | 'email' | 'telefone' | 'aleatoria';
+  beneficiario_id: string;
+  beneficiario_nome: string;
+  pix_default?: {
+    pix_chave: string;
+    pix_tipo: 'cpf' | 'cnpj' | 'email' | 'telefone' | 'aleatoria';
+  } | null;
 }
 
 interface NovoReembolsoModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (reembolso: any) => void;
-  beneficiariosExistentes?: Beneficiario[];
+  onSuccess?: () => void;
+  demandaId: string;
 }
 
 export default function NovoReembolsoModal({
   isOpen,
   onClose,
-  onSubmit,
-  beneficiariosExistentes = [],
+  onSuccess,
+  demandaId,
 }: NovoReembolsoModalProps) {
+  // Estado de carregamento
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [beneficiariosExistentes, setBeneficiariosExistentes] = useState<Beneficiario[]>([]);
+
   // Dados do beneficiário
   const [beneficiarioNome, setBeneficiarioNome] = useState('');
   const [cpfCnpj, setCpfCnpj] = useState('');
@@ -37,6 +43,7 @@ export default function NovoReembolsoModal({
   const [telefone, setTelefone] = useState('');
   const [pixChave, setPixChave] = useState('');
   const [pixTipo, setPixTipo] = useState<'cpf' | 'cnpj' | 'email' | 'telefone' | 'aleatoria'>('cpf');
+  const [beneficiarioSelecionado, setBeneficiarioSelecionado] = useState<Beneficiario | null>(null);
   const [isCadastrarNovo, setIsCadastrarNovo] = useState(false);
 
   // Dados do reembolso
@@ -46,19 +53,51 @@ export default function NovoReembolsoModal({
   const [comprovante, setComprovante] = useState<File | null>(null);
   const [comprovantePreview, setComprovantePreview] = useState<string>('');
 
+  // Carregar beneficiários ao abrir o modal
+  useEffect(() => {
+    if (isOpen) {
+      loadBeneficiarios();
+    }
+  }, [isOpen]);
+
+  const loadBeneficiarios = async () => {
+    setIsLoading(true);
+    try {
+      const response = await mandrillApi.getBeneficiarios();
+      const beneficiarios = response.results || response.data || response;
+      setBeneficiariosExistentes(beneficiarios);
+    } catch (error) {
+      console.error('Erro ao carregar beneficiários:', error);
+      setBeneficiariosExistentes([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   if (!isOpen) return null;
 
   const handleBeneficiarioChange = (nome: string) => {
-    const beneficiario = beneficiariosExistentes.find(b => b.nome === nome);
+    const beneficiario = beneficiariosExistentes.find(b => b.beneficiario_nome === nome);
     if (beneficiario) {
-      setBeneficiarioNome(beneficiario.nome);
-      setCpfCnpj(beneficiario.cpf_cnpj || '');
-      setEmail(beneficiario.email || '');
-      setTelefone(beneficiario.telefone || '');
-      setPixChave(beneficiario.pix_chave || '');
-      setPixTipo(beneficiario.pix_tipo || 'cpf');
+      setBeneficiarioSelecionado(beneficiario);
+      setBeneficiarioNome(beneficiario.beneficiario_nome);
+      
+      // Limpa campos que não vêm da API
+      setCpfCnpj('');
+      setEmail('');
+      setTelefone('');
+      
+      // PIX default do beneficiário
+      if (beneficiario.pix_default) {
+        setPixChave(beneficiario.pix_default.pix_chave);
+        setPixTipo(beneficiario.pix_default.pix_tipo);
+      } else {
+        setPixChave('');
+        setPixTipo('cpf');
+      }
       setIsCadastrarNovo(false);
     } else {
+      setBeneficiarioSelecionado(null);
       setBeneficiarioNome(nome);
       setCpfCnpj('');
       setEmail('');
@@ -86,7 +125,7 @@ export default function NovoReembolsoModal({
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!beneficiarioNome.trim()) {
@@ -114,19 +153,62 @@ export default function NovoReembolsoModal({
       return;
     }
 
-    const reembolso = {
-      beneficiario_nome: beneficiarioNome.trim(),
-      beneficiario_pix_chave: pixChave.trim() || undefined,
-      beneficiario_pix_tipo: pixChave.trim() ? pixTipo : undefined,
-      valor: parseFloat(valor),
-      data_pagamento: dataPagamento,
-      descricao: descricao.trim(),
-      comprovante: comprovante,
-      tipo: 'reembolso',
-    };
+    setIsSubmitting(true);
 
-    onSubmit(reembolso);
-    handleClose();
+    try {
+      const reembolsoData: any = {
+        compra_tipo: 'reembolso',
+        compra_descricao: descricao.trim(),
+        compra_valor: parseFloat(valor),
+        compra_meio_pagamento: 'pix', // Reembolso sempre PIX
+        compra_status: 'criado',
+        compra_cupom_file: comprovante,
+      };
+
+      // Data de pagamento
+      if (dataPagamento) {
+        reembolsoData.compra_data_pagamento = dataPagamento;
+      }
+
+      // Beneficiário existente
+      if (beneficiarioSelecionado && beneficiarioSelecionado.beneficiario_id) {
+        reembolsoData.compra_beneficiario = beneficiarioSelecionado.beneficiario_id;
+        
+        // Usar PIX default do beneficiário se disponível
+        if (beneficiarioSelecionado.pix_default) {
+          reembolsoData.compra_pix_chave = beneficiarioSelecionado.pix_default.pix_chave;
+          reembolsoData.compra_pix_tipo = beneficiarioSelecionado.pix_default.pix_tipo;
+        }
+      } 
+      // Novo beneficiário
+      else if (isCadastrarNovo) {
+        reembolsoData.beneficiario_add = {
+          beneficiario_nome: beneficiarioNome.trim(),
+          beneficiario_documento: cpfCnpj.trim(),
+          beneficiario_email: email.trim(),
+          beneficiario_telefone: telefone.trim(),
+          beneficiario_pix_chave: pixChave.trim() || undefined,
+          beneficiario_pix_tipo: pixChave.trim() ? pixTipo : undefined,
+        };
+        
+        // PIX do novo beneficiário
+        if (pixChave.trim()) {
+          reembolsoData.compra_pix_chave = pixChave.trim();
+          reembolsoData.compra_pix_tipo = pixTipo;
+        }
+      }
+
+      await mandrillApi.createCompra(demandaId, reembolsoData);
+      
+      alert('Reembolso cadastrado com sucesso!');
+      handleClose();
+      onSuccess?.();
+    } catch (error: any) {
+      console.error('Erro ao cadastrar reembolso:', error);
+      alert(error.response?.data?.message || 'Erro ao cadastrar reembolso. Tente novamente.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleClose = () => {
@@ -149,6 +231,12 @@ export default function NovoReembolsoModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
       <div className="bg-gray-800 border-2 border-gray-700 rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+        {/* Loading Overlay */}
+        {isLoading && (
+          <div className="absolute inset-0 bg-gray-900/50 backdrop-blur-sm rounded-lg flex items-center justify-center z-10">
+            <Loader2 className="w-8 h-8 text-blue-400 animate-spin" />
+          </div>
+        )}
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-xl font-bold text-white flex items-center gap-2">
@@ -189,6 +277,7 @@ export default function NovoReembolsoModal({
                       setTelefone('');
                       setPixChave('');
                       setPixTipo('cpf');
+                      setBeneficiarioSelecionado(null);
                     } else if (valor === '') {
                       // Placeholder selecionado, não fazer nada
                     } else {
@@ -203,8 +292,8 @@ export default function NovoReembolsoModal({
                   <option value="novo" className="font-semibold text-green-400">+ Novo Beneficiário</option>
                   <option disabled>──────────</option>
                   {beneficiariosExistentes.map((b, idx) => (
-                    <option key={idx} value={b.nome}>
-                      {b.nome}
+                    <option key={idx} value={b.beneficiario_nome}>
+                      {b.beneficiario_nome}
                     </option>
                   ))}
                 </select>
@@ -428,15 +517,24 @@ export default function NovoReembolsoModal({
             <button
               type="button"
               onClick={handleClose}
-              className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors"
+              disabled={isSubmitting}
+              className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Cancelar
             </button>
             <button
               type="submit"
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+              disabled={isSubmitting}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
-              Cadastrar Reembolso
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Cadastrando...
+                </>
+              ) : (
+                'Cadastrar Reembolso'
+              )}
             </button>
           </div>
         </form>

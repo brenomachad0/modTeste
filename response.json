@@ -1,0 +1,105 @@
+{
+    "data": {
+        "entrega_id": "e3d14bee-c64e-4f4b-8320-1ced73913588",
+        "entrega_demanda": "ec6600cf-26a9-44c3-8322-35bdd2ab20c9",
+        "entrega_demanda_item": "2ee1918b-4fb6-41bf-a2d2-bffaf3f56123",
+        "entrega_titulo": "Edição de filme 15”",
+        "entrega_letra": "B",
+        "entrega_resposta": {
+            "tom": [],
+            "uso": [],
+            "data": "",
+            "local": "",
+            "title": "Edição de filme 15”",
+            "estilo": [],
+            "idioma": "portugues",
+            "pessoa": "",
+            "horario": "",
+            "locacao": "",
+            "periodo": {
+                "unidade": "anos",
+                "quantidade": "1"
+            },
+            "tecnica": {},
+            "elemento": "",
+            "endereco": "",
+            "objetivos": [],
+            "estrategia": "Edição de filme 15”",
+            "territorio": "Nacional",
+            "description": "Edição de filme 15”",
+            "referencias": [],
+            "duracaoFilme": {
+                "tipo": "Até",
+                "unidade": "segundos",
+                "quantidade": "15"
+            },
+            "tipoProducao": "Edição",
+            "externalReference": "",
+            "referenciaDemanda": "",
+            "tecnicaObservacoes": {},
+            "veiculosDivulgacao": {
+                "Youtube": true,
+                "Internet": true,
+                "Redes Sociais": true
+            }
+        },
+        "entrega_created_at": "2025-10-20T20:00:13.853Z",
+        "entrega_updated_at": "2025-10-20T20:00:13.853Z",
+        "servicos": [
+            {
+                "proj_entrega": "e3d14bee-c64e-4f4b-8320-1ced73913588",
+                "proj_servico_titulo": "Orçamento Aprovado",
+                "board": {
+                    "board_id": "496c0064-1329-4f9a-8c16-408091159bda",
+                    "board_node_id": "7a0dc681-6ede-4b09-bfe7-63596685c888",
+                    "board_entidade": "entrega",
+                    "board_entidade_id": "e3d14bee-c64e-4f4b-8320-1ced73913588",
+                    "board_position_x": "0.00",
+                    "board_position_y": "250.00",
+                    "board_in": null,
+                    "board_out": null,
+                    "board_tipo": "orcamento",
+                    "board_created_at": null,
+                    "board_updated_at": null
+                }
+            },
+            {
+                "proj_servico_id": "6361fcba-97ee-439c-aa8b-9dc5629ce148",
+                "proj_entrega": "e3d14bee-c64e-4f4b-8320-1ced73913588",
+                "proj_servico_servico_id": "bf87b66a-19de-4482-98c0-b143083479f9",
+                "proj_servico_prazo": 0,
+                "proj_servico_titulo": "Desdobramento 9x16",
+                "board": {
+                    "board_id": "7921cac7-b473-4259-8d1f-bd885338749c",
+                    "board_node_id": "9411507e-cea7-40c7-8c60-aad94b9a1373",
+                    "board_entidade": "servico",
+                    "board_entidade_id": "6361fcba-97ee-439c-aa8b-9dc5629ce148",
+                    "board_position_x": "0.00",
+                    "board_position_y": "0.00",
+                    "board_in": null,
+                    "board_out": null,
+                    "board_tipo": "servico",
+                    "board_created_at": null,
+                    "board_updated_at": null
+                }
+            },
+            {
+                "proj_entrega": "e3d14bee-c64e-4f4b-8320-1ced73913588",
+                "proj_servico_titulo": "Entrega Final",
+                "board": {
+                    "board_id": "9c0f7af7-c55d-44f9-b242-dc11aba7576e",
+                    "board_node_id": "a34bfe11-f138-4be9-8ed9-34bdd0e2e128",
+                    "board_entidade": "entrega",
+                    "board_entidade_id": "e3d14bee-c64e-4f4b-8320-1ced73913588",
+                    "board_position_x": "600.00",
+                    "board_position_y": "250.00",
+                    "board_in": null,
+                    "board_out": null,
+                    "board_tipo": "entrega",
+                    "board_created_at": null,
+                    "board_updated_at": null
+                }
+            }
+        ]
+    }
+}

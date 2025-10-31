@@ -266,61 +266,60 @@ export default function EntregaFlowCanvas({
     };
   }
   
-  // 🔥 CRIAR NODES: Apenas baseado em boardData.entregas (estrutura completa do board)
+  // Criar nodes para entregas
   const initialNodes = React.useMemo(() => {
-    const boardDataParaUsar = boardData?.entregas || [];
+    // 🔥 Extrair array de entregas do boardData (igual ServiceFlowCanvas faz com boardData)
+    const entregasBoard = boardData?.entregas || [];
     
-    if (boardDataParaUsar.length === 0) {
+    if (entregasBoard.length === 0) {
+      console.warn('⚠️ boardData.entregas está vazio!');
       return [];
     }
     
-    const allNodes: Node[] = boardDataParaUsar.map((item: any, index: number) => {
+    console.group('🎨 [BOARD] Criando Nodes de Entregas');
+    console.log('📊 Items no boardData.entregas:', entregasBoard.length);
+    console.log('🎯 Entregas no props:', entregas.length);
+    
+    // Verificar tipos de boards
+    const boardTypes = entregasBoard.reduce((acc: any, item: any) => {
+      const board = item.board || item.boards;
+      const tipo = board?.board_tipo || 'unknown';
+      acc[tipo] = (acc[tipo] || 0) + 1;
+      return acc;
+    }, {});
+    console.log('📋 Tipos de boards:', boardTypes);
+    
+    // 🔥 ESTRATÉGIA CORRETA: Mapear CADA ITEM do boardData.entregas para um node (igual ServiceFlowCanvas)
+    const allNodes: Node[] = entregasBoard.map((item: any, index: number) => {
       const board = item.board || item.boards;
       
       if (!board) {
+        console.warn(`⚠️ Item ${index} sem board:`, item);
         return null;
       }
-      
-      const position = {
-        x: Number(board.board_position_x) || (250 + index * 350), 
-        y: Number(board.board_position_y) || 150
-      };
       
       const boardTipo = board.board_tipo;
       const nodeId = board.board_node_id;
       
       if (!nodeId) {
+        console.warn(`⚠️ Board sem node_id:`, board);
         return null;
       }
       
+      const position = {
+        x: Number(board.board_position_x) || (100 + index * 200),
+        y: Number(board.board_position_y) || 150
+      };
+      
+      // 🔥 Criar nodeData baseado no tipo
       let nodeData: any = {
-        id: nodeId,
+        id: nodeId, // ID único do board
         boardType: boardTipo,
         onEntregaClick,
       };
       
-      if (boardTipo === 'entrega') {
-        const entrega = entregas.find(e => e.id === item.entrega_id);
-        if (entrega) {
-          nodeData = {
-            ...nodeData,
-            ...entrega,
-            id: nodeId,
-            entrega_id: entrega.id,
-            onEntregaClick,
-            isSelected: false,
-            isSystemNode: false,
-          };
-        } else {
-          nodeData = {
-            ...nodeData,
-            nome: item.entrega_titulo || '(sem titulo)',
-            status: 'planejada',
-            progresso_percentual: 0,
-            isSystemNode: false,
-          };
-        }
-      } else if (boardTipo === 'entrega-inicio') {
+      // 🔥 TIPO 1: Nó de INÍCIO
+      if (boardTipo === 'entrega-inicio') {
         nodeData = {
           ...nodeData,
           nome: item.entrega_titulo || 'Inicio',
@@ -329,7 +328,10 @@ export default function EntregaFlowCanvas({
           isSystemNode: true,
           entrega_id: null,
         };
-      } else if (boardTipo === 'entrega-fim') {
+        console.log(`✅ Nó INÍCIO: ${nodeId.substring(0,12)}... pos=(${position.x},${position.y})`);
+      }
+      // 🔥 TIPO 2: Nó de FIM
+      else if (boardTipo === 'entrega-fim') {
         nodeData = {
           ...nodeData,
           nome: item.entrega_titulo || 'Fim',
@@ -338,6 +340,25 @@ export default function EntregaFlowCanvas({
           isSystemNode: true,
           entrega_id: null,
         };
+        console.log(`✅ Nó FIM: ${nodeId.substring(0,12)}... pos=(${position.x},${position.y})`);
+      }
+      // 🔥 TIPO 3: Entrega NORMAL
+      else if (boardTipo === 'entrega') {
+        const entrega = entregas.find(e => e.id === item.entrega_id);
+        
+        if (entrega) {
+          nodeData = {
+            ...nodeData,
+            ...entrega, // Spread todos os dados da entrega
+            id: nodeId, // Manter nodeId como ID principal
+            entrega_id: entrega.id, // Guardar ID real da entrega
+            isSystemNode: false,
+            isSelected: false,
+          };
+          console.log(`✅ Entrega "${entrega.nome}": ${nodeId.substring(0,12)}... pos=(${position.x},${position.y})`);
+        } else {
+          console.warn(`⚠️ Entrega não encontrada para entrega_id: ${item.entrega_id}`);
+        }
       }
       
       return {
@@ -348,7 +369,121 @@ export default function EntregaFlowCanvas({
         sourcePosition: Position.Right,
         targetPosition: Position.Left,
       };
-    }).filter(Boolean) as Node[];
+    }).filter(Boolean) as Node[]; // Remove nulls
+    
+        
+    // � DEBUG: Tabela de nodes criados
+    
+    // 🔥 2. CRIAR NODES DAS ENTREGAS (tipo 'entrega')
+    console.log(`\n🔧 Processando ${entregas.length} entregas do props...`);
+    entregas.forEach((entrega, index) => {
+      console.log(`  [${index + 1}/${entregas.length}] Buscando board para entrega: ${entrega.id.substring(0,8)}... "${entrega.nome}"`);
+      
+      // Buscar board da entrega na resposta da API
+      const entregaBoard = entregasBoard.find(
+        (e: any) => e.entrega_id === entrega.id && e.board?.board_tipo === 'entrega'
+      );
+      
+      if (!entregaBoard) {
+        console.warn(`    ❌ Não encontrado no boardData`);
+        return;
+      }
+      
+      const board = entregaBoard?.board;
+      
+      // Se não tiver board, pula (não cria node sem board_node_id)
+      if (!board || !board.board_node_id) {
+        console.warn(`    ⚠️ Entrega sem board ou sem board_node_id:`, entrega.id, entrega.nome);
+        return;
+      }
+      
+      console.log(`    ✅ Board encontrado: ${board.board_node_id.substring(0,8)}...`);
+      
+      const position = {
+        x: Number(board.board_position_x) || (canvasCenterX + (index * horizontalSpacing)),
+        y: Number(board.board_position_y) || canvasCenterY
+      };
+      
+      const nodeData = {
+        ...entrega,
+        onEntregaClick,
+        isSelected: false,
+        isSystemNode: false,
+        boardNodeId: board.board_node_id, // ID do board para referência
+      };
+      
+      allNodes.push({
+        id: board.board_node_id, // 🔥 USAR board_node_id como ID do ReactFlow
+        type: 'entregaNode',
+        position,
+        data: nodeData,
+        sourcePosition: Position.Right,
+        targetPosition: Position.Left,
+      });
+    });
+    
+    // 🔥 3. CRIAR NÓ DE FIM (entrega-fim)
+    const nodeFim = entregasBoard.find((e: any) => {
+      const board = e.boards || e.board;
+      return board?.board_tipo === 'entrega-fim';
+    });
+    
+    if (nodeFim) {
+      const board = nodeFim.boards || nodeFim.board;
+      
+      if (board && board.board_node_id) {
+        allNodes.push({
+          id: board.board_node_id,
+          type: 'entregaNode',
+          position: { 
+            x: Number(board.board_position_x) || 800, 
+            y: Number(board.board_position_y) || 0
+          },
+          data: {
+            id: board.board_node_id, // 🔥 Usar board_node_id como identificador
+            nome: nodeFim.entrega_titulo || 'Fim',
+            status: 'planejada',
+            progresso_percentual: 0,
+            isSystemNode: true,
+            boardType: 'entrega-fim',
+            connectionStatus: 'system-disconnected',
+            entrega_id: null, // Nó de sistema não tem entrega real
+          },
+          sourcePosition: Position.Right,
+          targetPosition: Position.Left,
+        });
+        console.log(`✅ Nó FIM criado: ${board.board_node_id.substring(0,12)}...`);
+      } else {
+        console.warn('⚠️ Nó FIM sem board_node_id:', nodeFim);
+      }
+    } else {
+      console.warn('⚠️ Nó FIM não encontrado no boardData');
+    }
+    
+    }).filter(Boolean) as Node[]; // Remove nulls
+    
+    // 🔍 DEBUG: Tabela de nodes criados
+    console.log('✅ Total de nodes criados:', allNodes.length);
+    console.log('📊 Resumo:');
+    console.log('  - Nós de sistema (início/fim):', allNodes.filter(n => n.data.isSystemNode).length);
+    console.log('  - Entregas normais:', allNodes.filter(n => !n.data.isSystemNode).length);
+    console.log('  - Esperado: 7 nodes (2 sistema + 5 entregas)');
+    
+    if (allNodes.length > 0) {
+      console.table(allNodes.map(n => ({
+        id: n.id?.substring(0, 12) + '...',
+        tipo: n.data.boardType || 'entrega',
+        titulo: n.data.nome || '(sem nome)',
+        isSystem: n.data.isSystemNode ? 'Sim' : 'Não',
+        entrega_id: n.data.entrega_id ? n.data.entrega_id.substring(0, 12) + '...' : 'null',
+        pos_x: n.position.x.toFixed(2),
+        pos_y: n.position.y.toFixed(2),
+      })));
+    } else {
+      console.warn('⚠️ NENHUM NODE FOI CRIADO!');
+    }
+    
+    console.groupEnd();
     
     return allNodes;
   }, [entregas, boardData, onEntregaClick]);
@@ -358,6 +493,9 @@ export default function EntregaFlowCanvas({
     const edgesArray: Edge[] = [];
     const entregasBoard = boardData?.entregas || [];
     
+    console.group('🔗 [BOARD] Criando Edges (Conexões)');
+    console.log('📊 Total de items com boards:', entregasBoard.length);
+    
     // Processar cada entrega para criar edges
     entregasBoard.forEach((item: any, index: number) => {
       const board = item.board || item.boards;
@@ -366,9 +504,11 @@ export default function EntregaFlowCanvas({
         return;
       }
       
+      // sourceId é o board_node_id
       const sourceId = board.board_node_id;
       
       if (!sourceId) {
+        console.warn('⚠️ Board sem board_node_id:', board);
         return;
       }
       
@@ -388,8 +528,12 @@ export default function EntregaFlowCanvas({
           },
         };
         edgesArray.push(edge);
+        console.log(`  ↪️  Edge: ${sourceId.substring(0,8)}... → ${targetNodeId.substring(0,8)}...`);
       });
     });
+    
+    console.log('✅ Total de edges criados:', edgesArray.length);
+    console.groupEnd();
     
     return edgesArray;
   }, [boardData]);
@@ -516,11 +660,11 @@ export default function EntregaFlowCanvas({
       return;
     }
     
-    // 🔥 FIX: Pass entrega_id (actual entrega ID) instead of board_node_id
-    // node.data.id = board_node_id (UUID for ReactFlow)
-    // node.data.entrega_id = real entrega ID (what parent component needs)
-    if (onEntregaClick && node.data.entrega_id) {
-      onEntregaClick(node.data.entrega_id);
+    // Chamar callback de clique duplo na entrega
+    // Para entregas normais, node.data.id é o ID real da entrega
+    // Para nós de sistema, seria o board_node_id (mas já bloqueamos acima)
+    if (onEntregaClick && node.data.id) {
+      onEntregaClick(node.data.id);
     }
   }, [onEntregaClick]);
 

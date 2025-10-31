@@ -23,62 +23,36 @@ export default function ProjetoDetalhePage() {
   useEffect(() => {
     const projetoId = params.id as string;
     
-    console.log('🔍 [PAGE] Iniciando busca de detalhes para:', projetoId);
-    console.log('📊 [PAGE] Estado:', {
-      totalProjetos: projetos.length,
-      loadingLista,
-      hasCache: hasCache(projetoId),
-    });
-    
     // Busca projeto base da lista
     const projetoBase = projetos.find(p => p.id === projetoId);
     
     if (!projetoBase) {
       if (!loadingLista) {
-        console.warn('⚠️ [PAGE] Projeto não encontrado na lista');
         setError('Projeto não encontrado');
-      } else {
-        console.log('⏳ [PAGE] Aguardando lista carregar...');
       }
       return;
     }
 
-    console.log('✅ [PAGE] Projeto base encontrado:', {
-      id: projetoBase.id,
-      codigo: projetoBase.demanda_codigo,
-      cliente: projetoBase.cliente_nome,
-    });
-
     // Se já tem cache, usa imediatamente
     if (hasCache(projetoId)) {
-      console.log('⚡ [PAGE] Usando projeto do cache');
       buscarDetalhes(projetoBase)
         .then(projeto => {
-          console.log('✅ [PAGE] Projeto do cache carregado:', projeto);
           setProjetoDetalhado(projeto);
         })
         .catch(err => {
-          console.error('❌ [PAGE] Erro ao buscar do cache:', err);
+          console.error('❌ Erro ao buscar projeto do cache:', err);
           setError(err.message);
         });
       return;
     }
 
     // Busca detalhes da API
-    console.log('🔍 [PAGE] Buscando detalhes da API para:', projetoId);
     buscarDetalhes(projetoBase)
       .then(projeto => {
-        console.log('✅ [PAGE] Projeto detalhado recebido:', {
-          id: projeto.id,
-          valor_producao: projeto.valor_producao,
-          prazo_dias: projeto.prazo_dias,
-          data_aprovacao: projeto.data_aprovacao,
-          total_entregas: projeto.total_entregas,
-        });
         setProjetoDetalhado(projeto);
       })
       .catch(err => {
-        console.error('❌ [PAGE] Erro ao buscar detalhes:', err);
+        console.error('❌ Erro ao buscar detalhes do projeto:', err);
         setError(err.message || 'Erro ao carregar projeto');
       });
   }, [params.id, projetos, loadingLista, buscarDetalhes, hasCache]);
@@ -123,25 +97,19 @@ export default function ProjetoDetalhePage() {
   }
 
   const handleRefresh = async () => {
-    console.log('🔄 Recarregando projeto após adicionar informação...');
     const projetoId = params.id as string;
     const projetoBase = projetos.find(p => p.id === projetoId);
     if (projetoBase) {
-      // Limpa o estado atual IMEDIATAMENTE para mostrar loading
       setProjetoDetalhado(null);
       
       try {
-        // Força recarregar da API, sem usar cache
         const dadosCompletos = await mandrillApi.getDemandaCompletaParaMOD(projetoId);
-        
-        // Enriquece e atualiza o projeto
         const { enriquecerProjetoComOrcamento } = await import('@/lib/adapters/mandrill-adapter');
         const projetoAtualizado = enriquecerProjetoComOrcamento(projetoBase, dadosCompletos);
         
-        console.log('✅ Projeto atualizado com nova informação:', projetoAtualizado);
         setProjetoDetalhado(projetoAtualizado);
       } catch (err: any) {
-        console.error('❌ Erro ao recarregar:', err);
+        console.error('❌ Erro ao recarregar projeto:', err);
         setError('Erro ao recarregar projeto');
       }
     }

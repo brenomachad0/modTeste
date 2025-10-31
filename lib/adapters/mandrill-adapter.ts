@@ -46,6 +46,9 @@ export interface ProjetoMOD {
   total_entregas: number;
   entregas?: any[];
   
+  // Board Data (posições no ReactFlow, nós de início/fim, etc)
+  boardData?: any;
+  
   // Timeline/Histórico - APENAS INFORMAÇÕES
   timeline?: Array<{
     id: string;
@@ -197,10 +200,11 @@ export function enriquecerProjetoComOrcamento(
     composicoes: any[];
     servicos: any[];
     entregas?: any[];
+    boardData?: any;
     thread?: any[];
   }
 ): ProjetoMOD {
-  const { demanda, orcamento, composicoes, entregas = [], thread = [] } = dadosCompletos;
+  const { demanda, orcamento, composicoes, entregas = [], boardData, thread = [] } = dadosCompletos;
   
   // 🔍 DEBUG: Log dos dados recebidos
   console.log('🔍 [ADAPTER] Enriquecendo projeto:', projetoBase.id);
@@ -300,6 +304,9 @@ export function enriquecerProjetoComOrcamento(
       console.log('✅ Entregas mapeadas:', entregasMapeadas.length, entregasMapeadas);
       return entregasMapeadas;
     })(),
+    
+    // 🔥 Dados do board para ReactFlow (posições, conexões, etc)
+    boardData: boardData || {},
     
     // 🔥 Timeline/Histórico do projeto - APENAS INFORMAÇÕES
     timeline: thread

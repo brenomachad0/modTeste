@@ -103,6 +103,8 @@ interface Projeto {
   valor_total: number;
   prazo_dias: number;
   entregas?: Entrega[];
+  // 🔥 Dados do board (posições, conexões, etc)
+  boardData?: any;
   // 🔥 Timeline do projeto - APENAS MENSAGENS
   timeline?: Array<{
     id: string;
@@ -308,7 +310,6 @@ const ContratingModal: React.FC<{
       tipoCupom
     };
     
-    console.log('Dados do contrato:', contratoData);
     // Aqui você pode enviar os dados para a API
     onClose();
   };
@@ -603,14 +604,7 @@ const PurchaseModal: React.FC<{
         payload.compra_pix_tipo = pixTipoValue;
       }
 
-      console.log('📤 Enviando compra para API:', {
-        ...payload,
-        compra_valor: `R$ ${valorNumerico.toFixed(2)}`,
-      });
-
       await mandrillApi.criarCompra(payload);
-
-      console.log('✅ Compra criada com sucesso!');
 
       resetForm();
       onClose();
@@ -1148,16 +1142,7 @@ const InsumoModal: React.FC<{
         uploadData.entrega_id = entregaSelecionada;
       }
 
-      console.log('📤 Fazendo upload de insumo:', {
-        nome: arquivo.name,
-        tipo: tipoInsumo === 'outros' ? nomePersonalizado : tipoInsumo,
-        origem: uploadData.venda_arquivo_origem,
-        entrega: entregaSelecionada || 'Nenhuma',
-      });
-
       await mandrillApi.uploadArquivo(uploadData);
-
-      console.log('✅ Insumo enviado com sucesso!');
 
       resetForm();
       onClose();
@@ -1365,8 +1350,6 @@ const InformacoesModal: React.FC<{
       
       await mandrillApi.addInformacao(project.id, payload);
       
-      console.log('✅ Informação adicionada com sucesso!');
-      
       resetForm();
       onClose();
       
@@ -1512,8 +1495,16 @@ export default function ProjectDetail({
   
   // Estados para o fluxo de entregas
   const isDesktop = useIsDesktop();
-  const [entregaBoardData, setEntregaBoardData] = useState<any[]>([]);
+  const [entregaBoardData, setEntregaBoardData] = useState<any>(null);
   const [isSavingFlow, setIsSavingFlow] = useState(false);
+  
+  // Inicializar boardData quando o projeto carregar
+  React.useEffect(() => {
+    if (project.boardData && !entregaBoardData) {
+      console.log('🎨 [PROJECT DETAIL] Inicializando boardData do projeto:', project.boardData);
+      setEntregaBoardData(project.boardData);
+    }
+  }, [project.boardData]);
 
   // Mock do histórico de informações para exibir na timeline
   const historicoInformacoes = [
@@ -1666,7 +1657,7 @@ export default function ProjectDetail({
         
         return `${dia}/${mes}/${ano} ${horas}:${minutos}:${segundos}`;
       } catch (error) {
-        console.warn('Erro ao formatar orcamento_aprovado_at:', error);
+        // Erro ao formatar data
       }
     }
     
@@ -1724,27 +1715,42 @@ export default function ProjectDetail({
     setIsSavingFlow(true);
     
     try {
-      // Transformar nodes e edges para formato do board_data
-      const boardDataToSave = nodes.map((node: any) => ({
-        board_node_id: node.id,
-        board_entidade: 'entrega',
-        board_entidade_id: node.data.id,
-        board_tipo: 'entrega',
-        board_position_x: node.position.x,
-        board_position_y: node.position.y,
-        board_next: edges
+      // Salvar cada node individualmente via API
+      const savePromises = nodes.map(async (node: any) => {
+        // Determinar entidade e board_tipo
+        let entidade = 'entrega';
+        let entidadeId = node.data.entrega_id;
+        let boardTipo = node.data.boardType || 'entrega';
+        
+        // Nós de sistema (início/fim) pertencem à demanda
+        if (node.data.isSystemNode) {
+          entidade = 'demanda';
+          entidadeId = project.id;
+        }
+        
+        // board_next: array de board_node_ids conectados
+        const boardNext = edges
           .filter((edge: any) => edge.source === node.id)
-          .map((edge: any) => edge.target),
-      }));
+          .map((edge: any) => edge.target);
+        
+        const payload = {
+          board_node_id: node.id,
+          board_position_x: Math.round(node.position.x),
+          board_position_y: Math.round(node.position.y),
+          board_next: boardNext.length > 0 ? boardNext : null,
+          board_tipo: boardTipo,
+        };
+        
+        return mandrillApi.salvarBoard(entidade, entidadeId, payload);
+      });
       
-      // TODO: Salvar no backend via API
-      console.log('💾 Salvando fluxo de entregas:', boardDataToSave);
+      await Promise.all(savePromises);
       
-      // Simular delay de API
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Atualizar estado local
+      if (onRefresh) {
+        await onRefresh();
+      }
       
-      setEntregaBoardData(boardDataToSave);
-      console.log('✅ Fluxo de entregas salvo com sucesso!');
     } catch (error) {
       console.error('❌ Erro ao salvar fluxo de entregas:', error);
       alert('Erro ao salvar fluxo de entregas. Tente novamente.');
@@ -1754,7 +1760,6 @@ export default function ProjectDetail({
   };
 
   const handleCancelEntregaFlow = () => {
-    console.log('❌ Cancelando edição do fluxo de entregas');
     // O componente EntregaFlowCanvas já cuida de restaurar o estado original
   };
 
@@ -2093,44 +2098,24 @@ export default function ProjectDetail({
       <NovaCompraModal
         isOpen={showNovaCompraModal}
         onClose={() => setShowNovaCompraModal(false)}
-        onSubmit={(compra) => {
-          console.log('Nova compra:', compra);
-          // TODO: Integrar com API para salvar compra
-          setShowNovaCompraModal(false);
+        demandaId={project.id}
+        onSuccess={() => {
           if (onRefresh) {
             onRefresh();
           }
         }}
-        beneficiariosExistentes={mockBeneficiarios.map(b => ({
-          nome: b.nome,
-          cpf_cnpj: b.cpfCnpj,
-          email: b.email,
-          telefone: b.telefone,
-          pix_chave: b.chavePix,
-          pix_tipo: b.tipoChavePix as 'cpf' | 'cnpj' | 'email' | 'telefone' | 'aleatoria',
-        }))}
       />
 
       {/* Modal de Novo Reembolso */}
       <NovoReembolsoModal
         isOpen={showNovoReembolsoModal}
         onClose={() => setShowNovoReembolsoModal(false)}
-        onSubmit={(reembolso) => {
-          console.log('Novo reembolso:', reembolso);
-          // TODO: Integrar com API para salvar reembolso
-          setShowNovoReembolsoModal(false);
+        demandaId={project.id}
+        onSuccess={() => {
           if (onRefresh) {
             onRefresh();
           }
         }}
-        beneficiariosExistentes={mockBeneficiarios.map(b => ({
-          nome: b.nome,
-          cpf_cnpj: b.cpfCnpj,
-          email: b.email,
-          telefone: b.telefone,
-          pix_chave: b.chavePix,
-          pix_tipo: b.tipoChavePix as 'cpf' | 'cnpj' | 'email' | 'telefone' | 'aleatoria',
-        }))}
       />
 
       {/* Modal de Insumo */}

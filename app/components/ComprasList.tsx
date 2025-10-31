@@ -9,35 +9,42 @@ import { DollarSign, Calendar, User, FileText, CheckCircle, Clock, Upload, Alert
 
 interface Compra {
   compra_id: string;
-  compra_beneficiario_nome: string;
+  compra_tipo: 'compra' | 'reembolso';
   compra_data_pagamento: string;
-  compra_valor: number;
+  compra_valor: number | string; // API pode retornar string
+  compra_pix?: string | null;
+  compra_pix_chave?: string | null;
+  compra_pix_tipo?: string | null;
+  compra_boleto_linha_digitavel?: string | null;
+  compra_boleto_vencimento?: string | null;
+  compra_descricao: string;
+  compra_status: 'criado' | 'pendente' | 'autorizado' | 'pago' | 'agendado' | 'cancelado' | 'erro';
+  compra_demanda_id: string;
+  compra_demanda_tipo?: string | null;
+  compra_demanda_codigo?: string | null;
+  compra_cupom_file?: string | null;
+  compra_created_at: string;
+  compra_created_pessoa?: string | null;
+  compra_beneficiario: {
+    beneficiario_id: string;
+    beneficiario_pessoa_id: string;
+    beneficiario_nome: string;
+    beneficiario_created_pessoa: string | null;
+    beneficiario_created_at: string;
+  };
   compra_meio_pagamento: {
     meio_pagamento_id: string;
     meio_pagamento_nome: string;
-    meio_pagamento_tpag: number;
-    meio_pagamento_status: any;
+    meio_pagamento_tpag: string | null;
+    meio_pagamento_status: boolean;
   };
-  compra_pix?: string;
-  compra_pix_chave?: string;
-  compra_pix_tipo?: 'cpf' | 'cnpj' | 'email' | 'telefone' | 'aleatoria';
-  compra_descricao: string;
-  compra_centro_custo?: {
+  compra_centro_custo: {
     centro_custo_id: string;
     centro_custo_nome: string;
     centro_custo_tipo: 'fixo' | 'variavel';
     centro_custo_created_at: string;
     centro_custo_created_pessoa: string;
   };
-  compra_status: 'criado' | 'pago' | 'cancelado';
-  compra_demanda_id: string;
-  compra_demanda_tipo: string;
-  compra_demanda_codigo: string;
-  compra_created_at: string;
-  compra_created_pessoa: string;
-  compra_comprovante?: string; // URL do comprovante
-  compra_tem_comprovante?: boolean; // Flag se já foi enviado
-  compra_tipo?: 'compra' | 'reembolso'; // Tipo da compra
 }
 
 interface ComprasListProps {
@@ -48,6 +55,9 @@ interface ComprasListProps {
 }
 
 export default function ComprasList({ compras, onAddCompra, onAddReembolso, onCompraClick }: ComprasListProps) {
+  // Garantir que compras é sempre um array
+  const comprasArray = Array.isArray(compras) ? compras : [];
+
   const formatarData = (dataStr: string) => {
     try {
       const data = new Date(dataStr);
@@ -57,40 +67,49 @@ export default function ComprasList({ compras, onAddCompra, onAddReembolso, onCo
     }
   };
 
-  const formatarValor = (valor: number) => {
+  const formatarValor = (valor: number | string) => {
+    const valorNumerico = typeof valor === 'string' ? parseFloat(valor) : valor;
     return new Intl.NumberFormat('pt-BR', {
       style: 'currency',
       currency: 'BRL',
-    }).format(valor);
+    }).format(valorNumerico);
   };
 
   const calcularTotal = () => {
-    return compras.reduce((acc, compra) => acc + compra.compra_valor, 0);
+    return comprasArray.reduce((acc, compra) => {
+      const valor = typeof compra.compra_valor === 'string' 
+        ? parseFloat(compra.compra_valor) 
+        : compra.compra_valor;
+      return acc + (isNaN(valor) ? 0 : valor);
+    }, 0);
   };
 
   const getStatusColor = (status: string) => {
-    switch (status) {
+    const statusLower = status?.toLowerCase() || '';
+    switch (statusLower) {
       case 'pago':
         return 'text-green-400 bg-green-500/10';
       case 'cancelado':
+      case 'erro':
         return 'text-red-400 bg-red-500/10';
+      case 'autorizado':
+        return 'text-blue-400 bg-blue-500/10';
+      case 'agendado':
+        return 'text-purple-400 bg-purple-500/10';
+      case 'criado':
+      case 'pendente':
       default:
         return 'text-yellow-400 bg-yellow-500/10';
     }
   };
 
   const getStatusLabel = (status: string) => {
-    switch (status) {
-      case 'pago':
-        return 'Pago';
-      case 'cancelado':
-        return 'Cancelado';
-      default:
-        return 'Aguardando';
-    }
+    // Capitalizar primeira letra
+    if (!status) return 'Pendente';
+    return status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
   };
 
-  if (compras.length === 0) {
+  if (comprasArray.length === 0) {
     return (
       <div className="text-center py-8">
         <DollarSign className="w-10 h-10 text-gray-600 mx-auto mb-2" />
@@ -145,7 +164,7 @@ export default function ComprasList({ compras, onAddCompra, onAddReembolso, onCo
 
       {/* Lista de compras */}
       <div className="space-y-2 max-h-[400px] overflow-y-auto">
-        {compras.map((compra) => (
+        {comprasArray.map((compra) => (
           <div
             key={compra.compra_id}
             onClick={() => onCompraClick?.(compra)}
@@ -172,7 +191,7 @@ export default function ComprasList({ compras, onAddCompra, onAddReembolso, onCo
               <div className="flex items-center gap-3 text-xs text-gray-300">
                 <div className="flex items-center gap-1">
                   <User className="w-3 h-3 text-blue-400" />
-                  <span className="font-medium">{compra.compra_beneficiario_nome}</span>
+                  <span className="font-medium">{compra.compra_beneficiario?.beneficiario_nome || 'Sem beneficiário'}</span>
                 </div>
                 <div className="flex items-center gap-1 text-gray-400">
                   <Calendar className="w-3 h-3" />
@@ -182,11 +201,13 @@ export default function ComprasList({ compras, onAddCompra, onAddReembolso, onCo
 
               {/* Direita: Status de Comprovante, Status de Pagamento e Valor */}
               <div className="flex items-center gap-2">
-                {/* Status de comprovante */}
-                {compra.compra_tem_comprovante ? (
-                  <CheckCircle className="w-4 h-4 text-green-400" />
-                ) : (
-                  <AlertCircle className="w-4 h-4 text-yellow-400" />
+                {/* Status de comprovante (apenas para reembolsos) */}
+                {compra.compra_tipo === 'reembolso' && (
+                  compra.compra_cupom_file ? (
+                    <CheckCircle className="w-4 h-4 text-green-400" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 text-yellow-400" />
+                  )
                 )}
                 
                 {/* Status de pagamento */}
@@ -213,9 +234,9 @@ export default function ComprasList({ compras, onAddCompra, onAddReembolso, onCo
           </span>
         </div>
         <div className="flex items-center justify-between mt-1 text-xs text-gray-400">
-          <span>{compras.filter(c => c.compra_status === 'pago').length} pagas</span>
-          <span>{compras.filter(c => c.compra_status === 'criado').length} pendentes</span>
-          <span>{compras.filter(c => c.compra_status === 'cancelado').length} canceladas</span>
+          <span>{comprasArray.filter(c => c.compra_status?.toLowerCase() === 'pago').length} pagas</span>
+          <span>{comprasArray.filter(c => ['criado', 'pendente', 'agendado'].includes(c.compra_status?.toLowerCase() || '')).length} pendentes</span>
+          <span>{comprasArray.filter(c => ['cancelado', 'erro'].includes(c.compra_status?.toLowerCase() || '')).length} canceladas</span>
         </div>
       </div>
     </div>

@@ -199,23 +199,16 @@ class MandrillApiClient {
       // 5. Buscar timeline/histórico do projeto
       const thread = await this.getThreadByDemandaId(demandaId);
       
-      // 6. Buscar entregas do projeto
+      // 6. Buscar entregas do projeto com boards
       console.log(`🔍 [ENTREGAS] Buscando entregas para demandaId: "${demandaId}"`);
-      const entregasDoProjeto = await this.getEntregasPorDemanda(demandaId);
+      const dadosEntregas = await this.getEntregasPorDemanda(demandaId);
+      const entregasDoProjeto = dadosEntregas.entregas || [];
       console.log(`✅ [ENTREGAS] ${entregasDoProjeto.length} entregas encontradas`);
+      console.log(`� [BOARD] Status da demanda: ${dadosEntregas.demanda_status}`);
       
-      // 7. Buscar serviços de cada entrega
-      const todosServicos = await this.getServicos();
-      console.log(`🔧 [SERVICOS] Total de serviços na API: ${todosServicos.length}`);
-      
-      const entregasComServicos = entregasDoProjeto.map((entrega: any) => {
-        const servicosDaEntrega = todosServicos.filter((s: any) => s.proj_entrega === entrega.entrega_id);
-        console.log(`📦 [SERVICOS] Entrega "${entrega.entrega_titulo}": ${servicosDaEntrega.length} serviços`);
-        return {
-          ...entrega,
-          servicos: servicosDaEntrega,
-        };
-      });
+      // 7. Buscar serviços de cada entrega (já vem nos dados da API)
+      // Os serviços já estão incluídos em cada entrega.servicos[]
+      const entregasComServicos = entregasDoProjeto;
       
       // 8. Enriquecer composição com briefing
       const composicoesEnriquecidas = orcamentoDetalhado.composicao.map((comp: any) => {
@@ -240,7 +233,8 @@ class MandrillApiClient {
         },
         composicoes: composicoesEnriquecidas,
         servicos: orcamentoDetalhado.precificacao?.servicos?.servicos_detalhados || [],
-        entregas: entregasComServicos, // 🔥 Entregas do projeto com serviços
+        entregas: entregasComServicos, // 🔥 Entregas do projeto com serviços e boards
+        boardData: dadosEntregas, // 🔥 Dados completos do board (demanda_status, entregas com boards)
         thread, // 🔥 Timeline do projeto
       };
     } catch (error) {
@@ -295,11 +289,35 @@ class MandrillApiClient {
       
       const response = await this.api.get(endpoint);
       
-      // 🔥 Backend retorna: { data: { entregas: [...] } }
-      const entregas = response.data?.data?.entregas || response.data?.entregas || [];
+      // 🔥 Backend retorna estrutura completa com boards
+      const data = response.data?.data;
+      
+      if (!data) {
+        console.warn('⚠️ Resposta sem data.data');
+        return { entregas: [], demanda_id: demandaId, demanda_status: null, total_entregas: 0 };
+      }
+      
+      const entregas = data.entregas || [];
       
       console.log(`✅ ${entregas.length} entrega(s) encontrada(s) para demanda ${demandaId}`);
-      return entregas;
+      console.log('📦 [ENTREGAS] Estrutura completa:', {
+        demanda_id: data.demanda_id,
+        demanda_status: data.demanda_status,
+        total_entregas: data.total_entregas,
+        entregas_com_board: entregas.filter((e: any) => e.board || e.boards).length,
+        nodes_inicio_fim: entregas.filter((e: any) => 
+          e.boards?.board_tipo === 'entrega-inicio' || 
+          e.boards?.board_tipo === 'entrega-fim'
+        ).length,
+      });
+      
+      // Retorna estrutura completa para uso no board
+      return {
+        demanda_id: data.demanda_id,
+        demanda_status: data.demanda_status,
+        total_entregas: data.total_entregas,
+        entregas, // Array com board/boards e servicos[]
+      };
     } catch (error: any) {
       const status = error.response?.status;
       
@@ -321,8 +339,8 @@ class MandrillApiClient {
         console.error('❌ Erro ao buscar entregas:', error.message);
       }
       
-      // Retorna array vazio em qualquer erro (não trava a aplicação)
-      return [];
+      // Retorna estrutura vazia em qualquer erro
+      return { entregas: [], demanda_id: demandaId, demanda_status: null, total_entregas: 0 };
     }
   }
 
@@ -744,20 +762,43 @@ class MandrillApiClient {
   /**
    * Busca todas as compras (pode filtrar por demandaId)
    */
+  /**
+   * Lista todas as compras com filtros dinâmicos
+   * @param demandaId ID da demanda para filtrar compras
+   */
   async getCompras(demandaId?: string) {
     try {
-      const response = await this.api.get('/financeiro-compra');
-      const compras = response.data || [];
+      const params: any = {};
       
-      // Filtrar por demanda se especificado
+      // Filtrar por demanda usando query parameter
       if (demandaId) {
-        return compras.filter((c: any) => c.compra_demanda_id === demandaId);
+        params.demanda = demandaId;
       }
       
+      console.log('🔍 Buscando compras com params:', params);
+      const response = await this.api.get('/financeiro-compra', { params });
+      
+      console.log('📦 Resposta da API (compras):', response.data);
+      
+      // A API pode retornar { results: [...] } ou [...] direto
+      let compras = response.data;
+      
+      if (compras && typeof compras === 'object' && !Array.isArray(compras)) {
+        // Se retornou um objeto, procurar pela lista
+        compras = compras.results || compras.data || compras.compras || [];
+      }
+      
+      // Garantir que sempre retorna um array
+      if (!Array.isArray(compras)) {
+        console.warn('⚠️ Resposta não é um array, retornando array vazio');
+        return [];
+      }
+      
+      console.log('✅ Compras encontradas:', compras.length);
       return compras;
     } catch (error) {
       console.error('❌ Erro ao buscar compras:', error);
-      throw error;
+      return []; // Retorna array vazio em caso de erro
     }
   }
 
@@ -987,6 +1028,150 @@ class MandrillApiClient {
    */
   async deletarTarefa(id: number | string) {
     const response = await this.api.delete(`/tarefa-execucao/${id}`);
+    return response.data;
+  }
+
+  /**
+   * Lista todos os beneficiários cadastrados
+   * @param params Parâmetros opcionais de paginação
+   */
+  async getBeneficiarios(params?: {
+    page?: number;
+    limit?: number;
+  }) {
+    try {
+      const response = await this.api.get('/pessoa-beneficiario', { params });
+      
+      console.log('✅ Beneficiários carregados:', response.data);
+      
+      // A API pode retornar { meta, data } ou array direto
+      if (response.data?.data) {
+        return response.data.data;
+      }
+      return Array.isArray(response.data) ? response.data : [];
+    } catch (error) {
+      console.error('❌ Erro ao buscar beneficiários:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Busca detalhes de um beneficiário específico
+   * @param beneficiarioId ID do beneficiário
+   */
+  async getBeneficiario(beneficiarioId: string) {
+    try {
+      const response = await this.api.get(`/pessoa-beneficiario/${beneficiarioId}`);
+      console.log('✅ Beneficiário carregado:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('❌ Erro ao buscar beneficiário:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Atualiza dados completos de um beneficiário
+   * @param beneficiarioId ID do beneficiário
+   * @param data Dados para atualizar
+   */
+  async updateBeneficiario(beneficiarioId: string, data: {
+    beneficiario_nome?: string;
+    beneficiario_documento?: string;
+    beneficiario_email?: string;
+    beneficiario_telefone?: string;
+    beneficiario_pix_chave?: string;
+    beneficiario_pix_tipo?: 'cpf' | 'cnpj' | 'email' | 'telefone' | 'aleatoria';
+  }) {
+    try {
+      console.log('📤 Atualizando beneficiário completo:', beneficiarioId);
+      console.log('   Payload:', JSON.stringify(data, null, 2));
+      
+      const response = await this.api.patch(`/pessoa-beneficiario/${beneficiarioId}/atualizar-completo`, data);
+      
+      console.log('✅ Beneficiário atualizado:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('❌ Erro ao atualizar beneficiário:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Cria uma nova compra vinculada a uma demanda
+   * @param demandaId ID da demanda (projeto)
+   * @param data Dados da compra
+   */
+  async createCompra(demandaId: string, data: {
+    compra_tipo: 'compra' | 'reembolso';
+    compra_descricao: string;
+    compra_valor: number;
+    compra_meio_pagamento?: string; // pix, boleto, cartao
+    compra_centro_custo_id?: string; // default: f06377b0-c838-419a-9ed2-93bf3e266864
+    compra_beneficiario?: string; // ID do beneficiário existente
+    compra_pix?: string; // ID do PIX
+    compra_pix_chave?: string;
+    compra_pix_tipo?: string;
+    compra_boleto_linha_digitavel?: string;
+    compra_boleto_vencimento?: string;
+    compra_status?: string;
+    compra_demanda_tipo?: string;
+    compra_demanda_codigo?: string;
+    compra_data_pagamento?: string;
+    compra_cupom_file?: File; // arquivo do comprovante
+    beneficiario_add?: {
+      beneficiario_nome: string;
+      beneficiario_documento: string;
+      beneficiario_email: string;
+      beneficiario_telefone: string;
+      beneficiario_pix_tipo?: string;
+      beneficiario_pix_chave?: string;
+    };
+  }) {
+    // Monta o payload base
+    const payload: any = {
+      compra_demanda_id: demandaId, // OBRIGATÓRIO - logo no início do payload
+      compra_tipo: data.compra_tipo,
+      compra_descricao: data.compra_descricao,
+      compra_valor: data.compra_valor,
+      compra_centro_custo_id: data.compra_centro_custo_id || 'f06377b0-c838-419a-9ed2-93bf3e266864',
+      compra_status: data.compra_status || 'criado',
+    };
+
+    // Adiciona campos opcionais
+    if (data.compra_data_pagamento) payload.compra_data_pagamento = data.compra_data_pagamento;
+    if (data.compra_meio_pagamento) payload.compra_meio_pagamento = data.compra_meio_pagamento;
+    if (data.compra_demanda_tipo) payload.compra_demanda_tipo = data.compra_demanda_tipo;
+    if (data.compra_demanda_codigo) payload.compra_demanda_codigo = data.compra_demanda_codigo;
+    if (data.compra_beneficiario) payload.compra_beneficiario = data.compra_beneficiario;
+    if (data.compra_pix) payload.compra_pix = data.compra_pix;
+    if (data.compra_pix_chave) payload.compra_pix_chave = data.compra_pix_chave;
+    if (data.compra_pix_tipo) payload.compra_pix_tipo = data.compra_pix_tipo;
+    if (data.compra_boleto_linha_digitavel) payload.compra_boleto_linha_digitavel = data.compra_boleto_linha_digitavel;
+    if (data.compra_boleto_vencimento) payload.compra_boleto_vencimento = data.compra_boleto_vencimento;
+    if (data.beneficiario_add) payload.beneficiario_add = data.beneficiario_add;
+
+    // Se tem arquivo, converte para base64
+    if (data.compra_cupom_file) {
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const result = reader.result as string;
+          // Remove o prefixo "data:image/png;base64," e pega só o base64
+          const base64String = result.split(',')[1];
+          resolve(base64String);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(data.compra_cupom_file!);
+      });
+      
+      payload.compra_cupom_file = base64;
+    }
+
+    console.log('📤 Enviando JSON para /financeiro-compra/demanda:');
+    console.log(JSON.stringify(payload, null, 2));
+    
+    const response = await this.api.post('/financeiro-compra/demanda', payload);
     return response.data;
   }
 }
